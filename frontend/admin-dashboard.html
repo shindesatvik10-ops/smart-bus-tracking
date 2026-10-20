@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Admin Dashboard | Smart Bus Tracker</title>
+
+    <!-- Font Awesome -->
+    <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css"
+    >
+
+    <!-- Dashboard CSS -->
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+
+    <link rel="stylesheet" href="admin-dashboard.css">
+</head>
+
+<body>
+
+    <!-- ================= SIDEBAR ================= -->
+
+    <aside class="sidebar" id="sidebar">
+
+        <!-- Logo -->
+
+        <div class="sidebar-logo">
+
+            <div class="logo-icon">
+                <i class="fa-solid fa-bus"></i>
+            </div>
+
+            <div>
+                <h2>Bus Tracker</h2>
+                <span>Admin Panel</span>
+            </div>
+
+        </div>
+
+
+        <!-- Navigation -->
+
+        <nav class="sidebar-nav">
+
+            <p class="nav-title">MAIN MENU</p>
+
+            <a href="#" class="nav-item active" data-section="dashboard">
+
+                <i class="fa-solid fa-chart-pie"></i>
+
+                <span>Dashboard</span>
+
+            </a>
+
+
+            <a href="#" class="nav-item" data-section="buses">
+
+                <i class="fa-solid fa-bus"></i>
+
+                <span>Manage Buses</span>
+
+            </a>
+
+
+            <a href="#" class="nav-item" data-section="drivers">
+
+                <i class="fa-solid fa-id-card"></i>
+
+                <span>Manage Drivers</span>
+
+            </a>
+
+
+
+
+            <a href="#" class="nav-item" data-section="routes">
+
+                <i class="fa-solid fa-route"></i>
+
+                <span>Manage Routes</span>
+
+            </a>
+
+
+            <p class="nav-title second-title">MONITORING</p>
+
+
+            <a href="#" class="nav-item" data-section="tracking">
+
+                <i class="fa-solid fa-location-dot"></i>
+
+                <span>Live Tracking</span>
+
+                <span class="live-badge">LIVE</span>
+
+            </a>
+
+
+            <a href="#" class="nav-item" data-section="notifications">
+
+                <i class="fa-solid fa-bell"></i>
+
+                <span>Notifications</span>
+
+                
+
+            </a>
+
+
+            <a href="#" class="nav-item" data-section="reports">
+
+                <i class="fa-solid fa-chart-column"></i>
+
+                <span>Reports</span>
+
+            </a>
+
+
+            <p class="nav-title second-title">SYSTEM</p>
+
+
+            <a href="#" class="nav-item" data-section="settings">
+
+                <i class="fa-solid fa-gear"></i>
+
+                <span>Settings</span>
+
+            </a>
+
+        </nav>
+
+
+        <!-- Logout -->
+
+        <div class="sidebar-bottom">
+
+            <a href="#" class="logout" id="logoutBtn">
+
+                <i class="fa-solid fa-right-from-bracket"></i>
+
+                <span>Logout</span>
+
+            </a>
+
+        </div>
+
+    </aside>
+
+
+    <!-- ================= MAIN CONTENT ================= -->
+
+    <main class="main-content">
+
+        <!-- Topbar -->
+
+        <header class="topbar">
+
+            <button class="menu-button" id="menuButton">
+
+                <i class="fa-solid fa-bars"></i>
+
+            </button>
+
+
+            <div class="page-title">
+
+                <h1 id="pageTitle">Dashboard Overview</h1>
+
+                <p id="pageSubtitle">
+                    Welcome back, Admin. Here's what's happening today.
+                </p>
+
+            </div>
+
+
+            <div class="topbar-right">
+
+                <!-- Notification -->
+
+                <button class="icon-button">
+
+                    <i class="fa-regular fa-bell"></i>
+
+                    
+
+                </button>
+
+
+                <!-- Admin Profile -->
+
+                <div class="admin-profile">
+
+                    <div class="profile-avatar">
+
+                        <i class="fa-solid fa-user-tie"></i>
+
+                    </div>
+
+                    <div class="profile-info">
+
+                        <strong>Admin</strong>
+
+                        <span>Administrator</span>
+
+                    </div>
+
+                    <i class="fa-solid fa-chevron-down profile-arrow"></i>
+
+                </div>
+
+            </div>
+
+        </header>
+
+        <!-- ================= EMERGENCY ALERTS (visible on every tab) ================= -->
+        <div id="alertsBanner" style="display:none; margin: 0 24px 16px; padding:14px 18px; background:#fee2e2; border:1px solid #ef4444; border-radius:10px;">
+            <div id="alertsBannerList"></div>
+        </div>
+
+        <!-- ================= UI MESSAGE BANNER (for status & try/catch error feedback) ================= -->
+        <div id="uiMessageBanner" style="display:none; margin: 0 24px 16px; padding:14px 18px; border-radius:10px; font-size:13px; font-weight:600;"></div>
+
+
+        <!-- ================= DASHBOARD ================= -->
+
+        <section class="dashboard-section active-section" id="dashboard">
+
+            <!-- Welcome Banner -->
+
+            <div class="welcome-banner">
+
+                <div>
+
+                    <span class="banner-label">
+                        ADMIN DASHBOARD
+                    </span>
+
+                    <h2>
+                        Manage Your Bus Network
+                    </h2>
+
+                    <p>
+                        Monitor buses, drivers, routes and live fleet activity from one place.
+                    </p>
+
+                </div>
+
+                <div class="banner-icon">
+
+                    <i class="fa-solid fa-bus"></i>
+
+                </div>
+
+            </div>
+
+
+            <!-- Statistics -->
+
+            <div class="stats-grid">
+
+                <div class="stat-card">
+
+                    <div class="stat-top">
+
+                        <div class="stat-icon blue">
+
+                            <i class="fa-solid fa-bus"></i>
+
+                        </div>
+
+                        <span class="stat-status green-text" id="statBusesLive">
+                            0 live
+                        </span>
+
+                    </div>
+
+                    <h3 id="statTotalBuses">0</h3>
+
+                    <p>Total Buses</p>
+
+                </div>
+
+
+                <div class="stat-card">
+
+                    <div class="stat-top">
+
+                        <div class="stat-icon purple">
+
+                            <i class="fa-solid fa-id-card"></i>
+
+                        </div>
+
+                        <span class="stat-status green-text">
+                            Active
+                        </span>
+
+                    </div>
+
+                    <h3 id="statTotalDrivers">0</h3>
+
+                    <p>Total Drivers</p>
+
+                </div>
+
+
+                <div class="stat-card">
+
+                    <div class="stat-top">
+
+                        <div class="stat-icon orange">
+
+                            <i class="fa-solid fa-route"></i>
+
+                        </div>
+
+                    </div>
+
+                    <h3 id="statTotalRoutes">0</h3>
+
+                    <p>Total Routes</p>
+
+                </div>
+
+
+                <div class="stat-card">
+
+                    <div class="stat-top">
+
+                        <div class="stat-icon green">
+
+                            <i class="fa-solid fa-location-dot"></i>
+
+                        </div>
+
+                        <span class="stat-status live-text">
+                            ● LIVE
+                        </span>
+
+                    </div>
+
+                    <h3 id="statBusesOnRoute">0</h3>
+
+                    <p>Buses On Route</p>
+
+                </div>
+
+            </div>
+
+
+            <!-- Main Dashboard Grid -->
+
+            <div class="dashboard-grid">
+
+                <!-- Bus Tracking -->
+
+                <div class="dashboard-card tracking-card">
+
+                    <div class="card-header">
+
+                        <div>
+
+                            <h3>Live Bus Tracking</h3>
+
+                            <p>
+                                Current status of buses on route
+                            </p>
+
+                        </div>
+
+                        <button class="view-all" data-section="tracking">
+                            View Map
+                            <i class="fa-solid fa-arrow-right"></i>
+                        </button>
+
+                    </div>
+
+
+                    <!-- Live Leaflet Map -->
+
+                    <div class="map-container">
+
+                        <div id="miniMap"></div>
+
+                        <div class="map-label">
+
+                            <i class="fa-solid fa-location-dot"></i>
+
+                            Live Location
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Bus Status -->
+
+                <div class="dashboard-card">
+
+                    <div class="card-header">
+
+                        <div>
+
+                            <h3>Bus Status</h3>
+
+                            <p>
+                                Today's active buses
+                            </p>
+
+                        </div>
+
+                        <button class="more-btn">
+
+                            <i class="fa-solid fa-ellipsis"></i>
+
+                        </button>
+
+                    </div>
+
+
+                    <div class="bus-status-list" id="busStatusList">
+                        <p style="padding:16px; opacity:0.6;">Loading buses...</p>
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- Recent Trips -->
+
+            <div class="dashboard-card recent-trips">
+
+                <div class="card-header">
+
+                    <div>
+
+                        <h3>Recent Trips</h3>
+
+                        <p>
+                            Latest bus activity
+                        </p>
+
+                    </div>
+
+                    <button class="view-all">
+                        View All
+                    </button>
+
+                </div>
+
+
+                <div class="table-wrapper">
+
+                    <table>
+
+                        <thead>
+
+                            <tr>
+
+                                <th>Bus</th>
+
+                                <th>Driver</th>
+
+                                <th>Route</th>
+
+                                <th>Start Time</th>
+
+                                <th>End Time</th>
+
+                                <th>Status</th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody id="recentTripsBody">
+                            <tr><td colspan="6" style="text-align:center; opacity:0.6; padding:20px;">No trips yet. Trips appear here when drivers start them.</td></tr>
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- ================= OTHER SECTIONS ================= -->
+
+        <section class="dashboard-section" id="buses">
+
+            <div class="section-page-header">
+
+                <div>
+                    <h2>Manage Buses</h2>
+                    <p>Add, edit and manage buses.</p>
+                </div>
+
+                <button class="primary-action" id="addBusBtn">
+                    <i class="fa-solid fa-plus"></i>
+                    Add Bus
+                </button>
+
+            </div>
+
+            <!-- Add Bus Form Card -->
+            <div class="dashboard-card" id="addBusCard" style="display:none; margin-bottom:20px; padding:20px;">
+                <div class="card-header" style="margin-bottom:14px;">
+                    <div>
+                        <h3>Add New Bus</h3>
+                        <p style="color:#64748b; font-size:12px;">Bus number is unique and used as the database key.</p>
+                    </div>
+                </div>
+                <form id="addBusForm" style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+                    <div style="flex:1; min-width:200px;">
+                        <label style="font-size:12px; font-weight:700; color:#475569; display:block; margin-bottom:6px;">Bus Number (Unique Key) *</label>
+                        <input type="text" id="busNumberInput" placeholder="e.g. Bus 12" required style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                    </div>
+                    <div style="flex:1; min-width:180px;">
+                        <label style="font-size:12px; font-weight:700; color:#475569; display:block; margin-bottom:6px;">Seating Capacity *</label>
+                        <input type="number" id="busCapacityInput" placeholder="e.g. 40" min="1" required style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                        <button type="submit" class="primary-action" id="saveBusBtn"><i class="fa-solid fa-check"></i> Save Bus</button>
+                        <button type="button" class="primary-action" id="cancelBusBtn" style="background:#64748b;">Cancel</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="dashboard-card">
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Bus Number</th>
+                                <th>Capacity</th>
+                                <th>Assigned Driver</th>
+                                <th>Assigned Route</th>
+                                <th>Live Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="busesTableBody">
+                            <tr><td colspan="6" style="text-align:center; opacity:0.6; padding:20px;">Loading buses...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </section>
+
+
+        <section class="dashboard-section" id="drivers">
+
+            <div class="section-page-header">
+
+                <div>
+                    <h2>Manage Drivers</h2>
+                    <p>Manage all registered bus drivers and route assignments.</p>
+                </div>
+
+                <button class="primary-action" id="addDriverBtn">
+                    <i class="fa-solid fa-plus"></i>
+                    Add Driver
+                </button>
+
+            </div>
+
+            <!-- Add Driver Form Card -->
+            <div class="dashboard-card" id="addDriverCard" style="display:none; margin-bottom:20px; padding:20px;">
+                <div class="card-header" style="margin-bottom:12px;">
+                    <div>
+                        <h3>Register New Driver</h3>
+                        <p style="color:#64748b; font-size:12px;">Creates a driver login account without logging out the admin.</p>
+                    </div>
+                    <div style="background:#fef3c7; color:#92400e; padding:8px 12px; border-radius:6px; font-size:11px; margin-top:8px;">
+                        <i class="fa-solid fa-circle-info"></i> Note: The Auth account itself can only be fully deleted from the Firebase console (client code cannot delete another user's Auth account).
+                    </div>
+                </div>
+                <form id="addDriverForm" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px;">
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#475569; display:block; margin-bottom:4px;">Full Name *</label>
+                        <input type="text" id="driverNameInput" placeholder="John Doe" required style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                    </div>
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#475569; display:block; margin-bottom:4px;">Phone (10 digits) *</label>
+                        <input type="tel" id="driverPhoneInput" placeholder="9876543210" maxlength="10" required style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                    </div>
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#475569; display:block; margin-bottom:4px;">Address *</label>
+                        <input type="text" id="driverAddressInput" placeholder="123 Main St, City" required style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                    </div>
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#475569; display:block; margin-bottom:4px;">Email (Login ID) *</label>
+                        <input type="email" id="driverEmailInput" placeholder="driver@example.com" required style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                    </div>
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#475569; display:block; margin-bottom:4px;">Password (min 6 chars) *</label>
+                        <input type="password" id="driverPasswordInput" placeholder="••••••••" minlength="6" required style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                    </div>
+                    <div style="grid-column: 1 / -1; display:flex; gap:8px; margin-top:8px;">
+                        <button type="submit" class="primary-action" id="saveDriverBtn"><i class="fa-solid fa-user-plus"></i> Create Driver</button>
+                        <button type="button" class="primary-action" id="cancelDriverBtn" style="background:#64748b;">Cancel</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Edit Driver Form Card (for editing driver and resetting password) -->
+            <div class="dashboard-card" id="editDriverCard" style="display:none; margin-bottom:20px; padding:20px; border-left:4px solid #2563eb;">
+                <div class="card-header" style="margin-bottom:12px;">
+                    <div>
+                        <h3><i class="fa-solid fa-user-pen"></i> Edit Driver Details</h3>
+                        <p style="color:#64748b; font-size:12px;">Update driver profile or reset login password if they forgot it.</p>
+                    </div>
+                </div>
+                <form id="editDriverForm" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px;">
+                    <input type="hidden" id="editDriverUid">
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#475569; display:block; margin-bottom:4px;">Full Name *</label>
+                        <input type="text" id="editDriverName" placeholder="Driver Name" required style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                    </div>
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#475569; display:block; margin-bottom:4px;">Phone (10 digits) *</label>
+                        <input type="tel" id="editDriverPhone" placeholder="9876543210" maxlength="10" required style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                    </div>
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#475569; display:block; margin-bottom:4px;">Address</label>
+                        <input type="text" id="editDriverAddress" placeholder="Driver Address" style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                    </div>
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#475569; display:block; margin-bottom:4px;">Email (Login ID) *</label>
+                        <input type="email" id="editDriverEmail" placeholder="driver@example.com" required style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                    </div>
+                    <div style="grid-column: 1 / -1; background:#f8fafc; padding:12px 16px; border-radius:8px; border:1px solid #e2e8f0;">
+                        <label style="font-size:12px; font-weight:700; color:#1e293b; display:block; margin-bottom:6px;">
+                            <i class="fa-solid fa-key" style="color:#d97706;"></i> Reset / Change Password (if driver forgot password)
+                        </label>
+                        <div style="display:flex; gap:10px; align-items:center;">
+                            <input type="text" id="editDriverPassword" placeholder="Enter new password (min 6 characters, or leave blank to keep unchanged)" style="flex:1; padding:9px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                            <button type="button" id="sendResetEmailBtn" class="primary-action" style="background:#0284c7; padding:9px 14px; font-size:12px; white-space:nowrap;">
+                                <i class="fa-solid fa-paper-plane"></i> Send Reset Link
+                            </button>
+                        </div>
+                        <small style="color:#64748b; font-size:11px; display:block; margin-top:5px;">
+                            Setting a password here immediately updates the driver's credential so they can log in with it. You can also send an automated reset link to their email.
+                        </small>
+                    </div>
+                    <div style="grid-column: 1 / -1; display:flex; gap:8px; margin-top:8px;">
+                        <button type="submit" class="primary-action" id="saveEditDriverBtn" style="background:#2563eb;"><i class="fa-solid fa-check"></i> Save Changes</button>
+                        <button type="button" class="primary-action" id="cancelEditDriverBtn" style="background:#64748b;">Cancel</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="dashboard-card">
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Phone</th>
+                                <th>Email</th>
+                                <th>Address</th>
+                                <th>Assigned Bus</th>
+                                <th>Assigned Route</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="driversTableBody">
+                            <tr><td colspan="7" style="text-align:center; opacity:0.6; padding:20px;">Loading drivers...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </section>
+
+
+
+
+        <section class="dashboard-section" id="routes">
+
+            <div class="section-page-header">
+
+                <div>
+                    <h2>Manage Routes</h2>
+                    <p>Create and manage bus routes and stops with the integrated interactive map.</p>
+                </div>
+
+                <button class="primary-action" id="addRouteBtn">
+                    <i class="fa-solid fa-plus"></i>
+                    Add Route
+                </button>
+
+            </div>
+
+            <!-- Route Builder Card with Leaflet Map -->
+            <div class="dashboard-card" id="routeBuilderCard" style="display:none; margin-bottom:20px; padding:20px;">
+                <div class="card-header" style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h3 id="routeBuilderTitle">Route Builder</h3>
+                        <p style="color:#64748b; font-size:12px;">Click the map to add stops. Drag markers to adjust positions. Minimum 2 stops required.</p>
+                    </div>
+                    <input type="hidden" id="editingRouteId" value="">
+                </div>
+
+                <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+                    <div style="flex:2; min-width:240px;">
+                        <label style="font-size:12px; font-weight:700; color:#475569; display:block; margin-bottom:4px;">Route Name *</label>
+                        <input type="text" id="routeNameInput" placeholder="e.g. Route 1 - City Center to Campus" style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;" required>
+                    </div>
+                    <div style="flex:2; min-width:240px;">
+                        <label style="font-size:12px; font-weight:700; color:#475569; display:block; margin-bottom:4px;">Search Place (Nominatim)</label>
+                        <div style="display:flex; gap:6px;">
+                            <input type="text" id="nominatimSearchInput" placeholder="Search a place or landmark..." style="flex:1; padding:9px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                            <button type="button" class="primary-action" id="nominatimSearchBtn" style="white-space:nowrap;"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="routeBuilderMap" style="height:380px; width:100%; border-radius:12px; border:1px solid #cbd5e1; margin-bottom:14px; position:relative;"></div>
+
+                <div style="margin-bottom:16px;">
+                    <h4 style="font-size:13px; font-weight:700; color:#334155; margin-bottom:8px;">Stops in Order:</h4>
+                    <div id="routeStopsList" style="display:flex; flex-direction:column; gap:8px; max-height:220px; overflow-y:auto; padding-right:6px;">
+                        <p style="font-size:12px; color:#94a3b8; font-style:italic;">No stops added yet. Click anywhere on the map above to add a stop.</p>
+                    </div>
+                </div>
+
+                <div style="display:flex; gap:8px;">
+                    <button type="button" class="primary-action" id="saveRouteBtn"><i class="fa-solid fa-floppy-disk"></i> Save Route</button>
+                    <button type="button" class="primary-action" id="cancelRouteBtn" style="background:#64748b;">Cancel</button>
+                </div>
+            </div>
+
+            <div class="dashboard-card">
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Route Name</th>
+                                <th>Stops</th>
+                                <th>Assigned Bus</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="routesTableBody">
+                            <tr><td colspan="4" style="text-align:center; opacity:0.6; padding:20px;">Loading routes...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </section>
+
+
+        <section class="dashboard-section" id="tracking">
+
+            <div class="section-page-header">
+
+                <div>
+                    <h2>Live Bus Tracking</h2>
+                    <p>Monitor all active buses in real time.</p>
+                </div>
+
+                <span class="live-indicator">
+                    ● LIVE
+                </span>
+
+            </div>
+
+            <div class="large-map">
+
+                <div id="adminMap"></div>
+
+            </div>
+
+        </section>
+
+
+        <section class="dashboard-section" id="notifications">
+
+            <div class="section-page-header">
+
+                <div>
+                    <h2>Notifications</h2>
+                    <p>Manage transportation alerts.</p>
+                </div>
+
+            </div>
+
+            <div class="dashboard-card">
+                <div style="display:flex; gap:10px; margin-bottom:16px;">
+                    <input type="text" id="notifMessageInput" placeholder="Type an announcement for all drivers..."
+                        style="flex:1; padding:10px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:13px;">
+                    <button class="primary-action" id="sendNotifBtn" style="white-space:nowrap;">
+                        <i class="fa-solid fa-paper-plane"></i>
+                        Send
+                    </button>
+                </div>
+                <div id="notificationsList">
+                    <p style="opacity:0.6;">Loading notifications...</p>
+                </div>
+            </div>
+
+        </section>
+
+
+        <section class="dashboard-section" id="reports">
+
+            <div class="section-page-header">
+
+                <div>
+                    <h2>Reports & Analytics</h2>
+                    <p>View transportation performance reports.</p>
+                </div>
+
+            </div>
+
+            <div class="dashboard-card">
+                <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
+                    <h3>Today's Driver Attendance</h3>
+                    <span id="reportLiveCount" style="font-size:13px; color:#16a34a; font-weight:600;">0 buses live now</span>
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr><th>Driver</th><th>Bus</th><th>Marked At</th></tr>
+                        </thead>
+                        <tbody id="reportAttendanceBody">
+                            <tr><td colspan="3" style="text-align:center; opacity:0.6; padding:20px;">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p id="reportNotMarked" style="margin-top:12px; opacity:0.75;"></p>
+            </div>
+
+        </section>
+
+
+        <section class="dashboard-section" id="settings">
+
+            <div class="section-page-header">
+
+                <div>
+                    <h2>Settings</h2>
+                    <p>Manage your admin account and system settings.</p>
+                </div>
+
+            </div>
+
+            <div class="empty-section">
+
+                <i class="fa-solid fa-gear"></i>
+
+                <h3>System Settings</h3>
+
+                <p>
+                    Admin profile and application settings
+                    will be available here.
+                </p>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <!-- Overlay for mobile -->
+
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+
+    <!-- Leaflet -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+
+    <!-- Firebase SDK (Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+    <script src="firebase.js"></script>
+    <script src="admin-dashboard.js"></script>
+
+</body>
+
+</html>

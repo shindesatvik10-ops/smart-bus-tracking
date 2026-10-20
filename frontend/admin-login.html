@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Admin Login | Smart Bus Tracker</title>
+
+    <!-- Font Awesome -->
+    <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css"
+    >
+
+    <link rel="stylesheet" href="admin-login.css">
+</head>
+
+<body>
+
+    <!-- ================= NAVBAR ================= -->
+
+    <header class="header">
+
+        <nav class="navbar">
+
+            <a href="index.html" class="logo">
+                <i class="fa-solid fa-bus"></i>
+                <span>Smart Bus Tracker</span>
+            </a>
+
+            <a href="index.html" class="back-home">
+                <i class="fa-solid fa-arrow-left"></i>
+                Back to Home
+            </a>
+
+        </nav>
+
+    </header>
+
+
+    <!-- ================= LOGIN SECTION ================= -->
+
+    <main class="login-section">
+
+        <div class="login-container">
+
+            <!-- LEFT SIDE -->
+
+            <div class="login-info">
+
+                <div class="info-icon">
+                    <i class="fa-solid fa-user-shield"></i>
+                </div>
+
+                <span class="welcome-text">
+                    ADMIN PORTAL
+                </span>
+
+                <h1>
+                    Manage Your
+                    <span>Bus Network</span>
+                </h1>
+
+                <p>
+                    Access the administration panel to manage buses,
+                    drivers, routes and monitor live transportation
+                    activity.
+                </p>
+
+                <div class="info-features">
+
+                    <div>
+                        <i class="fa-solid fa-bus"></i>
+                        <span>Manage Buses</span>
+                    </div>
+
+                    <div>
+                        <i class="fa-solid fa-users"></i>
+                        <span>Manage Drivers & Fleets</span>
+                    </div>
+
+                    <div>
+                        <i class="fa-solid fa-map-location-dot"></i>
+                        <span>Monitor Live Locations</span>
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- RIGHT SIDE LOGIN FORM -->
+
+            <div class="login-card">
+
+                <div class="login-heading">
+
+                    <div class="admin-icon">
+                        <i class="fa-solid fa-user-tie"></i>
+                    </div>
+
+                    <h2>Admin Login</h2>
+
+                    <p>
+                        Sign in to access the admin dashboard
+                    </p>
+
+                </div>
+
+
+                <form id="adminLoginForm">
+
+                    <!-- Email -->
+
+                    <div class="input-group">
+
+                        <label for="email">
+                            Admin id
+                        </label>
+
+                        <div class="input-box">
+
+                            <i class="fa-solid fa-envelope"></i>
+
+                            <input
+                                type="text"
+                                id="email"
+                                placeholder="Enter admin Id"
+                                required
+                            >
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- Password -->
+
+                    <div class="input-group">
+
+                        <div class="password-label">
+
+                            <label for="password">
+                                Password
+                            </label>
+
+                            <a href="#">
+                                Forgot Password?
+                            </a>
+
+                        </div>
+
+                        <div class="input-box">
+
+                            <i class="fa-solid fa-lock"></i>
+
+                            <input
+                                type="password"
+                                id="password"
+                                placeholder="Enter your password"
+                                required
+                            >
+
+                            <button
+                                type="button"
+                                id="togglePassword"
+                                class="password-toggle"
+                            >
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- Remember Me -->
+
+                    <div class="remember">
+
+                        <label>
+
+                            <input
+                                type="checkbox"
+                                id="remember"
+                            >
+
+                            <span>Remember me</span>
+
+                        </label>
+
+                    </div>
+
+
+                    <!-- Login Button -->
+
+                    <button
+                        type="submit"
+                        class="login-submit"
+                    >
+
+                        <span>Login to Dashboard</span>
+
+                        <i class="fa-solid fa-arrow-right"></i>
+
+                    </button>
+
+
+                    <div
+                        id="loginMessage"
+                        class="login-message"
+                    ></div>
+
+                </form>
+
+
+                <div class="security">
+
+                    <i class="fa-solid fa-shield-halved"></i>
+
+                    <span>
+                        Secure Admin Access
+                    </span>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </main>
+
+
+    <footer>
+
+        <p>
+            © 2026 Smart Bus Tracking System.
+            All Rights Reserved.
+        </p>
+
+    </footer>
+
+
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <script src="firebase-config.js"></script>
+
+    <script src="admin-login.js"></script>
+    
+    
+
+</body>
+</html>

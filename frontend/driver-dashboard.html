@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Driver Dashboard | Smart Bus Tracker</title>
+
+    <!-- Font Awesome -->
+    <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css"
+    >
+
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+
+    <link rel="stylesheet" href="driver-dashboard.css">
+</head>
+
+<body>
+
+    <!-- ================= SIDEBAR ================= -->
+
+    <aside class="sidebar" id="sidebar">
+
+        <!-- Logo -->
+
+        <div class="sidebar-logo">
+
+            <div class="logo-icon">
+                <i class="fa-solid fa-bus"></i>
+            </div>
+
+            <div>
+                <h2>Bus Tracker</h2>
+                <span>Driver Panel</span>
+            </div>
+
+        </div>
+
+
+        <!-- Navigation -->
+
+        <nav class="sidebar-nav">
+
+            <p class="nav-title">MAIN MENU</p>
+
+            <a href="#" class="nav-item active" data-section="dashboard">
+
+                <i class="fa-solid fa-chart-pie"></i>
+
+                <span>Dashboard</span>
+
+            </a>
+
+
+            <a href="#" class="nav-item" data-section="trip">
+
+                <i class="fa-solid fa-location-dot"></i>
+
+                <span>My Trip</span>
+
+                <span class="live-badge" id="tripBadge" style="display:none;">LIVE</span>
+
+            </a>
+
+
+            <a href="#" class="nav-item" data-section="attendance">
+
+                <i class="fa-solid fa-clipboard-check"></i>
+
+                <span>Attendance</span>
+
+            </a>
+
+
+            <a href="#" class="nav-item" data-section="route">
+
+                <i class="fa-solid fa-route"></i>
+
+                <span>My Route</span>
+
+            </a>
+
+
+            <p class="nav-title second-title">UPDATES</p>
+
+
+            <a href="#" class="nav-item" data-section="notifications">
+
+                <i class="fa-solid fa-bell"></i>
+
+                <span>Notifications</span>
+
+                
+
+            </a>
+
+
+            <p class="nav-title second-title">SYSTEM</p>
+
+
+            <a href="#" class="nav-item" data-section="settings">
+
+                <i class="fa-solid fa-gear"></i>
+
+                <span>Settings</span>
+
+            </a>
+
+        </nav>
+
+
+        <!-- Logout -->
+
+        <div class="sidebar-bottom">
+
+            <a href="#" class="logout" id="logoutBtn">
+
+                <i class="fa-solid fa-right-from-bracket"></i>
+
+                <span>Logout</span>
+
+            </a>
+
+        </div>
+
+    </aside>
+
+
+    <!-- ================= MAIN CONTENT ================= -->
+
+    <main class="main-content">
+
+        <!-- Topbar -->
+
+        <header class="topbar">
+
+            <button class="menu-button" id="menuButton">
+
+                <i class="fa-solid fa-bars"></i>
+
+            </button>
+
+
+            <div class="page-title">
+
+                <h1 id="pageTitle">Dashboard Overview</h1>
+
+                <p id="pageSubtitle">
+                    Welcome back, <strong id="topSubtitleDriverName">Driver</strong>. Here's your trip status for today.
+                </p>
+
+            </div>
+
+
+            <div class="topbar-right">
+
+                <button id="sosBtn" style="background:#ef4444; color:#fff; border:none; padding:8px 16px; border-radius:20px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    SOS
+                </button>
+
+                <button class="icon-button">
+
+                    <i class="fa-regular fa-bell"></i>
+
+                    
+
+                </button>
+
+
+                <div class="driver-profile">
+
+                    <div class="profile-avatar">
+
+                        <i class="fa-solid fa-id-card"></i>
+
+                    </div>
+
+                    <div class="profile-info">
+
+                        <strong id="driverNameLabel">Driver</strong>
+
+                        <span id="driverBusLabel">Driver</span>
+
+                    </div>
+
+                    <i class="fa-solid fa-chevron-down profile-arrow"></i>
+
+                </div>
+
+            </div>
+
+        </header>
+
+
+        <!-- ================= DASHBOARD ================= -->
+
+        <section class="dashboard-section active-section" id="dashboard">
+
+            <!-- Welcome Banner -->
+
+            <div class="welcome-banner">
+
+                <div>
+
+                    <span class="banner-label">
+                        DRIVER DASHBOARD
+                    </span>
+
+                    <h2 id="welcomeBannerHeading">
+                        Ready For Today's Trip, <span id="welcomeDriverName">Driver</span>?
+                    </h2>
+
+                    <p id="welcomeBannerSub">
+                        Mark your attendance to start sharing your
+                        live location on the live map.
+                    </p>
+
+                </div>
+
+                <div class="banner-icon">
+
+                    <i class="fa-solid fa-bus"></i>
+
+                </div>
+
+            </div>
+
+
+            <!-- Statistics -->
+
+            <div class="stats-grid">
+
+                <div class="stat-card">
+
+                    <div class="stat-top">
+
+                        <div class="stat-icon purple">
+
+                            <i class="fa-solid fa-bus"></i>
+
+                        </div>
+
+                    </div>
+
+                    <h3 id="statBusNumber">Not assigned</h3>
+
+                    <p>Assigned Bus</p>
+
+                </div>
+
+
+                <div class="stat-card">
+
+                    <div class="stat-top">
+
+                        <div class="stat-icon orange">
+
+                            <i class="fa-solid fa-route"></i>
+
+                        </div>
+
+                    </div>
+
+                    <h3 id="statRouteName">Not assigned</h3>
+
+                    <p>Assigned Route</p>
+
+                </div>
+
+
+                <div class="stat-card">
+
+                    <div class="stat-top">
+
+                        <div class="stat-icon green">
+
+                            <i class="fa-solid fa-clipboard-check"></i>
+
+                        </div>
+
+                        <span class="stat-status" id="attendanceStatBadge">
+                            Not Marked
+                        </span>
+
+                    </div>
+
+                    <h3 id="attendanceStatText">Pending</h3>
+
+                    <p>Today's Attendance</p>
+
+                </div>
+
+
+                <div class="stat-card">
+
+                    <div class="stat-top">
+
+                        <div class="stat-icon" id="tripStatIcon">
+
+                            <i class="fa-solid fa-location-dot"></i>
+
+                        </div>
+
+                        <span class="stat-status" id="tripStatBadge">
+                            Idle
+                        </span>
+
+                    </div>
+
+                    <h3 id="tripStatText">Not Started</h3>
+
+                    <p>Trip Status</p>
+
+                </div>
+
+            </div>
+
+
+            <!-- Main Dashboard Grid -->
+
+            <div class="dashboard-grid">
+
+                <!-- Trip Control -->
+
+                <div class="dashboard-card tracking-card">
+
+                    <div class="card-header">
+
+                        <div>
+
+                            <h3>Trip Control</h3>
+
+                            <p>
+                                Mark attendance to auto-start location sharing
+                            </p>
+
+                        </div>
+
+                        <button class="view-all" data-section="trip">
+                            Open Trip
+                            <i class="fa-solid fa-arrow-right"></i>
+                        </button>
+
+                    </div>
+
+
+                    <div class="trip-control-card" style="border:none; padding:20px 0 0;">
+
+                        <div class="trip-status-block">
+
+                            <div class="trip-status-icon" id="dashTripIcon">
+                                <i class="fa-solid fa-bus"></i>
+                            </div>
+
+                            <div class="trip-status-text">
+                                <span>Current Status</span>
+                                <h3 id="dashTripStatusText">Trip Not Started</h3>
+                            </div>
+
+                        </div>
+
+                        <div class="trip-buttons" style="display:flex; gap:10px; flex-wrap:wrap;">
+
+                            <button class="attendance-mark-btn" id="quickMarkBtn">
+                                <i class="fa-solid fa-clipboard-check"></i>
+                                Mark Attendance
+                            </button>
+
+                            <button class="attendance-mark-btn" id="dashStartTripBtn" style="background:#16a34a; color:#fff; display:none;">
+                                <i class="fa-solid fa-play"></i>
+                                Start Duty &amp; Share GPS
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Route Preview -->
+
+                <div class="dashboard-card">
+
+                    <div class="card-header">
+
+                        <div>
+
+                            <h3>Today's Route</h3>
+
+                            <p>
+                                <span id="routePreviewTitle">No route assigned yet</span>
+                            </p>
+
+                        </div>
+
+                        <button class="more-btn" data-section="route">
+
+                            <i class="fa-solid fa-arrow-right"></i>
+
+                        </button>
+
+                    </div>
+
+
+                    <div class="bus-status-list" id="routePreviewList">
+                        <p style="padding:16px; opacity:0.6;">Your route stops will appear here once the Admin assigns a route.</p>
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- Recent Trips -->
+
+            <div class="dashboard-card recent-trips">
+
+                <div class="card-header">
+
+                    <div>
+
+                        <h3>Recent Trips</h3>
+
+                        <p>
+                            Your last few completed trips
+                        </p>
+
+                    </div>
+
+                </div>
+
+
+                <div class="table-wrapper">
+
+                    <table>
+
+                        <thead>
+
+                            <tr>
+
+                                <th>Date</th>
+
+                                <th>Route</th>
+
+                                <th>Start Time</th>
+
+                                <th>End Time</th>
+
+                                <th>Status</th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody id="driverRecentTripsBody">
+                            <tr><td colspan="5" style="text-align:center; opacity:0.6; padding:20px;">No trips yet.</td></tr>
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- ================= MY TRIP / LIVE LOCATION SHARING ================= -->
+
+        <section class="dashboard-section" id="trip">
+
+            <div class="section-page-header">
+
+                <div>
+                    <h2>Driver Duty &amp; Live GPS Tracking</h2>
+                    <p>Broadcast your real phone GPS position so everyone can track your bus live on the home page map.</p>
+                </div>
+
+                <span class="live-indicator" id="tripLiveIndicator" style="display:none; background:#dcfce7; color:#166534; border:1px solid #bbf7d0; padding:6px 14px; border-radius:20px; font-weight:700; font-size:12px;">
+                    <span class="pulse-dot" style="display:inline-block; width:8px; height:8px; background:#22c55e; border-radius:50%; margin-right:4px;"></span> ● SHARING LIVE GPS
+                </span>
+
+            </div>
+
+            <!-- Main Location Sharing Card -->
+            <div class="dashboard-card" style="margin-bottom:20px; padding:22px; border-left:4px solid #2563eb;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px; margin-bottom:14px;">
+                    <div>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <div style="width:44px; height:44px; background:#eff6ff; color:#2563eb; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:20px;">
+                                <i class="fa-solid fa-satellite-dish"></i>
+                            </div>
+                            <div>
+                                <h3 style="font-size:18px; font-weight:700; color:#1e293b;">GPS Broadcast &amp; Duty Control</h3>
+                                <p style="font-size:13px; color:#64748b;">Direct browser geolocation sharing to Firebase Realtime Database</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Live GPS Status Badge -->
+                    <div id="gpsStatusBadge" style="padding:8px 16px; border-radius:30px; font-weight:700; font-size:13px; background:#f1f5f9; color:#475569; display:inline-flex; align-items:center; gap:8px;">
+                        <span style="width:8px; height:8px; background:#94a3b8; border-radius:50%; display:inline-block;"></span> Waiting for Start Duty
+                    </div>
+                </div>
+
+                <!-- Screen Wake Lock Tip Notice -->
+                <div style="background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; border-radius:8px; padding:10px 14px; font-size:12.5px; display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+                    <i class="fa-solid fa-lightbulb" style="color:#2563eb; font-size:15px;"></i>
+                    <span><strong>Driver Tip:</strong> Keep this page open and the screen on while driving. (Screen Wake Lock will be activated automatically).</span>
+                </div>
+
+                <!-- Live Broadcasting to Passengers Banner -->
+                <div id="broadcastStatusBanner" style="display:none; background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; border-radius:10px; padding:12px 18px; margin-bottom:16px; font-size:13.5px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="display:inline-block; width:10px; height:10px; background:#10b981; border-radius:50%; box-shadow:0 0 0 4px rgba(16,185,129,0.25);"></span>
+                        <span><strong>Live Location Broadcasting to Passengers:</strong> Your bus is broadcasting in real-time on the passenger map!</span>
+                    </div>
+                    <a href="index.html#liveMapSection" target="_blank" style="padding:6px 14px; background:#059669; color:#fff; border-radius:6px; font-weight:700; font-size:12px; text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
+                        <i class="fa-solid fa-eye"></i> View Live on Passenger Map <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:10px;"></i>
+                    </a>
+                </div>
+
+                <!-- Error / Offline Alert Banner -->
+                <div id="gpsErrorAlert" style="display:none; background:#fee2e2; border:1px solid #fca5a5; color:#991b1b; border-radius:8px; padding:12px 14px; font-size:13px; line-height:1.5; margin-bottom:16px;">
+                    <div style="display:flex; align-items:flex-start; gap:8px;">
+                        <i class="fa-solid fa-triangle-exclamation" style="margin-top:2px;"></i>
+                        <div id="gpsErrorText">GPS Notice</div>
+                    </div>
+                </div>
+
+                <!-- Assigned Bus & Route Details (No free bus picker - read from users/{uid}.assignedBus) -->
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:18px; background:#f8fafc; padding:16px; border-radius:10px; border:1px solid #e2e8f0;">
+                    <div>
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Assigned Bus</span>
+                        <h4 id="dutyAssignedBus" style="font-size:15px; font-weight:700; color:#1e293b; margin-top:2px;">Loading...</h4>
+                    </div>
+
+                    <div>
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Assigned Route</span>
+                        <h4 id="dutyAssignedRoute" style="font-size:15px; font-weight:700; color:#2563eb; margin-top:2px;">Loading...</h4>
+                    </div>
+
+                    <div>
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Shift Start Time</span>
+                        <h4 id="dutyShiftStart" style="font-size:15px; font-weight:700; color:#1e293b; margin-top:2px;">--:--</h4>
+                    </div>
+
+                    <div>
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">GPS Accuracy</span>
+                        <h4 id="dutyGpsAccuracy" style="font-size:15px; font-weight:700; color:#475569; margin-top:2px;">--</h4>
+                    </div>
+
+                    <div>
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Real GPS Speed</span>
+                        <h4 id="dutyGpsSpeed" style="font-size:15px; font-weight:700; color:#1e293b; margin-top:2px;">0.0 km/h</h4>
+                    </div>
+
+                    <div>
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Last Sent Time</span>
+                        <h4 id="dutyLastSent" style="font-size:15px; font-weight:700; color:#16a34a; margin-top:2px;">Never</h4>
+                    </div>
+                </div>
+
+                <!-- Switch Bus Option (Hidden by default; allowed only if admin assigned another bus) -->
+                <div id="switchBusSection" style="display:none; margin-bottom:18px; padding:12px; background:#fff7ed; border:1px solid #fed7aa; border-radius:8px;">
+                    <label style="font-size:12px; font-weight:700; color:#9a3412; display:block; margin-bottom:6px;">
+                        <i class="fa-solid fa-arrows-rotate"></i> Switch to Another Assigned Bus:
+                    </label>
+                    <div style="display:flex; gap:10px;">
+                        <select id="switchBusSelect" style="flex:1; padding:8px 12px; border:1px solid #fdba74; border-radius:6px; font-size:13px; font-weight:600; background:#fff;"></select>
+                        <button type="button" id="switchBusBtn" style="padding:8px 16px; background:#ea580c; color:#fff; border:none; border-radius:6px; font-weight:600; font-size:13px; cursor:pointer;">
+                            Switch
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Big Duty Action Buttons -->
+                <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:6px;">
+                    <button type="button" id="startDutyBtn" style="flex:1; min-width:220px; padding:15px 22px; background:#16a34a; color:#ffffff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px; box-shadow:0 4px 14px rgba(22,163,74,0.3); transition:all 0.2s;">
+                        <i class="fa-solid fa-play"></i> Start Duty (Mark Attendance &amp; Share GPS)
+                    </button>
+
+                    <button type="button" id="endDutyBtn" style="flex:1; min-width:220px; padding:15px 22px; background:#dc2626; color:#ffffff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; display:none; align-items:center; justify-content:center; gap:10px; box-shadow:0 4px 14px rgba(220,38,38,0.3); transition:all 0.2s;">
+                        <i class="fa-solid fa-stop"></i> End Duty (Stop Sharing &amp; Clock Out)
+                    </button>
+
+                    <a href="index.html#liveMapSection" target="_blank" style="padding:15px 22px; background:#0284c7; color:#ffffff; border:none; border-radius:10px; font-size:15px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; text-decoration:none; box-shadow:0 4px 14px rgba(2,132,199,0.3); transition:all 0.2s;">
+                        <i class="fa-solid fa-eye"></i> Passenger Live Map <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:12px;"></i>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Small Leaflet Map Showing Driver's Own GPS Position -->
+            <div class="dashboard-card" style="padding:16px;">
+                <div class="card-header" style="margin-bottom:12px;">
+                    <div>
+                        <h3><i class="fa-solid fa-location-crosshairs" style="color:#2563eb;"></i> Driver GPS Map</h3>
+                        <p>Your real device GPS position on your assigned route</p>
+                    </div>
+                </div>
+                <div style="position:relative; border-radius:12px; overflow:hidden; border:1px solid #cbd5e1;">
+                    <div id="driverMap" style="width:100%; height:360px; z-index:1;"></div>
+                </div>
+            </div>
+
+        </section>
+
+
+        <!-- ================= ATTENDANCE ================= -->
+
+        <section class="dashboard-section" id="attendance">
+
+            <div class="section-page-header">
+
+                <div>
+                    <h2>Attendance</h2>
+                    <p>Mark attendance to start sharing your live GPS location with passengers. Your browser will ask for location permission.</p>
+                </div>
+
+            </div>
+
+
+            <div class="attendance-card">
+
+                <div class="trip-status-block">
+
+                    <div class="trip-status-icon" id="attendancePageIcon">
+                        <i class="fa-solid fa-clipboard-check"></i>
+                    </div>
+
+                    <div class="trip-status-text">
+                        <span>Today &middot; <span id="attendanceDateText"></span></span>
+                        <h3 id="attendancePageStatusText">Not Marked Yet</h3>
+                    </div>
+
+                </div>
+
+                <button class="attendance-mark-btn" id="markAttendanceBtn">
+                    <i class="fa-solid fa-clipboard-check"></i>
+                    Mark Attendance
+                </button>
+
+            </div>
+
+
+            <div class="dashboard-card recent-trips">
+
+                <div class="card-header">
+
+                    <div>
+                        <h3>Attendance History</h3>
+                        <p>Your last few duty logs</p>
+                    </div>
+
+                </div>
+
+                <div class="table-wrapper">
+
+                    <table>
+
+                        <thead>
+
+                            <tr>
+                                <th>Date</th>
+                                <th>Marked At</th>
+                                <th>Bus</th>
+                                <th>Status</th>
+                            </tr>
+
+                        </thead>
+
+                        <tbody id="attendanceHistoryBody">
+                            <tr><td colspan="4" style="text-align:center; opacity:0.6; padding:20px;">No attendance records yet.</td></tr>
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- ================= MY ROUTE ================= -->
+
+        <section class="dashboard-section" id="route">
+
+            <div class="section-page-header">
+
+                <div>
+                    <h2>My Assigned Route</h2>
+                    <p id="routePageTitle">Stops assigned to your bus today.</p>
+                </div>
+
+            </div>
+
+            <!-- Route Summary Info Card -->
+            <div class="dashboard-card" style="margin-bottom:18px; padding:20px;">
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap:16px;">
+                    <div>
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Assigned Route</span>
+                        <h3 id="routeCardName" style="font-size:16px; font-weight:700; color:#2563eb; margin-top:2px;">Loading...</h3>
+                    </div>
+                    <div>
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Route Code</span>
+                        <h3 id="routeCardCode" style="font-size:16px; font-weight:700; color:#1e293b; margin-top:2px;">--</h3>
+                    </div>
+                    <div>
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Assigned Bus</span>
+                        <h3 id="routeCardBus" style="font-size:16px; font-weight:700; color:#1e293b; margin-top:2px;">--</h3>
+                    </div>
+                    <div>
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Total Stops</span>
+                        <h3 id="routeCardStopsCount" style="font-size:16px; font-weight:700; color:#16a34a; margin-top:2px;">0 Stops</h3>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dashboard-card" style="padding:16px;">
+                <div class="card-header" style="margin-bottom:14px;">
+                    <div>
+                        <h3><i class="fa-solid fa-list-ol" style="color:#2563eb;"></i> Route Stop Sequence</h3>
+                        <p>All stops from starting point to final destination</p>
+                    </div>
+                </div>
+                <div class="route-stops-list" id="routeStopsList">
+                    <p style="opacity:0.6;">No stops to show yet.</p>
+                </div>
+            </div>
+
+        </section>
+
+
+        <!-- ================= NOTIFICATIONS ================= -->
+
+        <section class="dashboard-section" id="notifications">
+
+            <div class="section-page-header">
+
+                <div>
+                    <h2>Notifications</h2>
+                    <p>Announcements from the transport admin.</p>
+                </div>
+
+            </div>
+
+            <div id="driverNotifList" class="dashboard-card">
+                <p style="opacity:0.6;">No announcements yet.</p>
+            </div>
+
+        </section>
+
+
+        <!-- ================= SETTINGS ================= -->
+
+        <section class="dashboard-section" id="settings">
+
+            <div class="section-page-header">
+
+                <div>
+                    <h2>Driver Profile &amp; Settings</h2>
+                    <p>View your registered driver credentials and assigned duty details.</p>
+                </div>
+
+            </div>
+
+            <div class="dashboard-card" style="padding:24px; max-width:850px;">
+                <div style="display:flex; align-items:center; gap:16px; margin-bottom:24px; padding-bottom:18px; border-bottom:1px solid #e2e8f0;">
+                    <div style="width:64px; height:64px; border-radius:50%; background:#eff6ff; color:#2563eb; display:flex; align-items:center; justify-content:center; font-size:28px;">
+                        <i class="fa-solid fa-id-card"></i>
+                    </div>
+                    <div>
+                        <h3 id="settingsProfileName" style="font-size:20px; font-weight:800; color:#1e293b;">Driver</h3>
+                        <span id="settingsProfileRole" style="display:inline-block; margin-top:4px; padding:3px 10px; background:#dbeafe; color:#1e40af; border-radius:12px; font-size:11px; font-weight:700;">ACTIVE DRIVER</span>
+                    </div>
+                </div>
+
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:16px; margin-bottom:24px;">
+                    <div style="background:#f8fafc; padding:14px; border-radius:10px; border:1px solid #e2e8f0;">
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Driver ID (UID)</span>
+                        <h4 id="settingsDriverUid" style="font-size:14px; color:#1e293b; margin-top:4px; font-family:monospace;">--</h4>
+                    </div>
+                    <div style="background:#f8fafc; padding:14px; border-radius:10px; border:1px solid #e2e8f0;">
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Registered Email</span>
+                        <h4 id="settingsDriverEmail" style="font-size:14px; color:#1e293b; margin-top:4px;">--</h4>
+                    </div>
+                    <div style="background:#f8fafc; padding:14px; border-radius:10px; border:1px solid #e2e8f0;">
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Contact Phone</span>
+                        <h4 id="settingsDriverPhone" style="font-size:14px; color:#1e293b; margin-top:4px;">--</h4>
+                    </div>
+                    <div style="background:#f8fafc; padding:14px; border-radius:10px; border:1px solid #e2e8f0;">
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Assigned Bus</span>
+                        <h4 id="settingsAssignedBus" style="font-size:14px; color:#2563eb; font-weight:700; margin-top:4px;">--</h4>
+                    </div>
+                    <div style="background:#f8fafc; padding:14px; border-radius:10px; border:1px solid #e2e8f0;">
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Assigned Route</span>
+                        <h4 id="settingsAssignedRoute" style="font-size:14px; color:#2563eb; font-weight:700; margin-top:4px;">--</h4>
+                    </div>
+                    <div style="background:#f8fafc; padding:14px; border-radius:10px; border:1px solid #e2e8f0;">
+                        <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Today's Attendance</span>
+                        <h4 id="settingsAttendanceStatus" style="font-size:14px; color:#16a34a; font-weight:700; margin-top:4px;">Pending</h4>
+                    </div>
+                </div>
+
+                <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                    <button type="button" id="settingsRefreshBtn" style="padding:10px 18px; background:#2563eb; color:#fff; border:none; border-radius:8px; font-size:13.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+                        <i class="fa-solid fa-rotate"></i> Refresh Profile Data
+                    </button>
+                    <button type="button" id="settingsLogoutBtn" style="padding:10px 18px; background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; border-radius:8px; font-size:13.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+                        <i class="fa-solid fa-right-from-bracket"></i> Logout
+                    </button>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- ================= LOCATION SHARING PERMISSION POPUP ================= -->
+    <div id="locationShareModal" class="location-share-modal-overlay" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(15,23,42,0.7); backdrop-filter:blur(4px); align-items:center; justify-content:center; padding:18px;">
+        <div style="background:#ffffff; width:100%; max-width:480px; border-radius:20px; overflow:hidden; box-shadow:0 25px 50px -12px rgba(0,0,0,0.3); border:1px solid #e2e8f0; animation:modalPopIn 0.25s ease-out; position:relative;">
+            <!-- Header -->
+            <div style="background:linear-gradient(135deg, #1e40af, #2563eb); padding:26px 24px 20px; text-align:center; color:#ffffff; position:relative;">
+                <button type="button" id="modalCloseXBtn" aria-label="Close" style="position:absolute; top:14px; right:14px; background:rgba(255,255,255,0.2); border:none; color:#ffffff; width:30px; height:30px; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:14px;">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+
+                <div style="width:64px; height:64px; background:rgba(255,255,255,0.18); border-radius:50%; display:inline-flex; align-items:center; justify-content:center; margin-bottom:12px; border:2px solid rgba(255,255,255,0.35); box-shadow:0 0 0 6px rgba(255,255,255,0.1);">
+                    <i class="fa-solid fa-satellite-dish" style="font-size:28px; color:#ffffff;"></i>
+                </div>
+
+                <div style="display:inline-flex; align-items:center; gap:6px; background:#dcfce7; color:#166534; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:800; margin-bottom:8px; border:1px solid #bbf7d0;">
+                    <i class="fa-solid fa-circle-check"></i> ATTENDANCE MARKED PRESENT
+                </div>
+
+                <h2 style="font-size:21px; font-weight:800; margin:0 0 6px; color:#ffffff;">
+                    Share Location with Passengers?
+                </h2>
+                <p style="font-size:13px; opacity:0.92; margin:0; line-height:1.45;">
+                    Broadcast your live GPS position so passengers can track your bus in real time on the live map.
+                </p>
+            </div>
+
+            <!-- Body with Duty Details -->
+            <div style="padding:22px 24px;">
+                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:14px 16px; margin-bottom:16px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #f1f5f9;">
+                        <span style="font-size:12px; color:#64748b; font-weight:600;"><i class="fa-solid fa-user-tie" style="color:#2563eb; width:16px;"></i> Driver</span>
+                        <strong id="modalDriverName" style="font-size:13px; color:#0f172a;">Driver</strong>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #f1f5f9;">
+                        <span style="font-size:12px; color:#64748b; font-weight:600;"><i class="fa-solid fa-bus" style="color:#2563eb; width:16px;"></i> Assigned Bus</span>
+                        <strong id="modalBusNo" style="font-size:13px; color:#0369a1; background:#e0f2fe; padding:2px 8px; border-radius:6px; font-weight:700;">--</strong>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:12px; color:#64748b; font-weight:600;"><i class="fa-solid fa-route" style="color:#2563eb; width:16px;"></i> Assigned Route</span>
+                        <strong id="modalRouteName" style="font-size:12.5px; color:#0f172a; max-width:260px; text-align:right; font-weight:700;">--</strong>
+                    </div>
+                </div>
+
+                <!-- GPS Permission Info -->
+                <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:10px; padding:12px 14px; margin-bottom:18px; font-size:12.5px; color:#1e40af; display:flex; gap:10px; align-items:flex-start;">
+                    <i class="fa-solid fa-location-crosshairs" style="color:#2563eb; font-size:16px; margin-top:2px; flex-shrink:0;"></i>
+                    <div style="line-height:1.45;">
+                        <strong>Browser GPS Permission:</strong> Clicking <em>"Allow &amp; Share Live GPS"</em> requests device location access and broadcasts your bus in real time.
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                    <button type="button" id="modalAllowShareBtn" style="width:100%; padding:14px; background:#16a34a; color:#ffffff; border:none; border-radius:10px; font-weight:700; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 4px 14px rgba(22,163,74,0.35); transition:all 0.2s;">
+                        <i class="fa-solid fa-satellite-dish"></i> Allow &amp; Share Live GPS
+                    </button>
+
+                    <button type="button" id="modalCancelShareBtn" style="width:100%; padding:11px 14px; background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; border-radius:8px; font-weight:600; font-size:13px; cursor:pointer;">
+                        Not Now
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlay for mobile -->
+
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+
+    <!-- Leaflet -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    <script src="firebase.js"></script>
+
+    <script src="driver-dashboard.js"></script>
+
+</body>
+
+</html>

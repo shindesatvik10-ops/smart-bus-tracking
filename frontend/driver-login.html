@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Driver Login | Smart Bus Tracker</title>
+
+    <!-- Font Awesome -->
+    <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css"
+    >
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="driver-login.css">
+
+</head>
+
+<body>
+
+
+    <!-- ================= NAVBAR ================= -->
+
+    <header class="header">
+
+        <nav class="navbar">
+
+            <a href="index.html" class="logo">
+
+                <i class="fa-solid fa-bus"></i>
+
+                <span>Smart Bus Tracker</span>
+
+            </a>
+
+
+            <a href="index.html" class="back-home">
+
+                <i class="fa-solid fa-arrow-left"></i>
+
+                Back to Home
+
+            </a>
+
+        </nav>
+
+    </header>
+
+
+    <!-- ================= LOGIN SECTION ================= -->
+
+    <main class="login-section">
+
+        <div class="login-container">
+
+
+            <!-- LEFT SIDE -->
+
+            <div class="login-info">
+
+                <div class="info-icon">
+
+                    <i class="fa-solid fa-id-card"></i>
+
+                </div>
+
+
+                <span class="welcome-text">
+
+                    DRIVER PORTAL
+
+                </span>
+
+
+                <h1>
+
+                    Start Your
+
+                    <span>Trip Today</span>
+
+                </h1>
+
+
+                <p>
+
+                    Login to share your live location, mark your
+                    attendance and manage your assigned route and
+                    trip status.
+
+                </p>
+
+
+                <div class="info-features">
+
+
+                    <div>
+
+                        <i class="fa-solid fa-location-dot"></i>
+
+                        <span>Share Live Location</span>
+
+                    </div>
+
+
+                    <div>
+
+                        <i class="fa-solid fa-clipboard-check"></i>
+
+                        <span>Mark Daily Attendance</span>
+
+                    </div>
+
+
+                    <div>
+
+                        <i class="fa-solid fa-route"></i>
+
+                        <span>View Assigned Route</span>
+
+                    </div>
+
+
+                    <div>
+
+                        <i class="fa-solid fa-bus"></i>
+
+                        <span>Start / End Trip</span>
+
+                    </div>
+
+
+                </div>
+
+            </div>
+
+
+            <!-- RIGHT SIDE LOGIN CARD -->
+
+            <div class="login-card">
+
+
+                <div class="login-heading">
+
+                    <div class="driver-icon">
+
+                        <i class="fa-solid fa-id-card"></i>
+
+                    </div>
+
+
+                    <h2>Driver Login</h2>
+
+
+                    <p>
+
+                        Sign in to access your dashboard
+
+                    </p>
+
+                </div>
+
+
+                <!-- LOGIN FORM -->
+
+                <form id="driverLoginForm">
+
+
+                    <!-- DRIVER ID -->
+
+                    <div class="input-group">
+
+                        <label for="driverId">
+
+                            Driver Name or Email
+
+                        </label>
+
+
+                        <div class="input-box">
+
+                            <i class="fa-solid fa-user"></i>
+
+                            <input
+                                type="text"
+                                id="driverId"
+                                placeholder="Enter your Driver Name or Email"
+                                required
+                            >
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- PASSWORD -->
+
+                    <div class="input-group">
+
+                        <div class="password-label">
+
+                            <label for="password">
+
+                                Password
+
+                            </label>
+
+
+                            <a href="#" id="forgotPasswordBtn">
+
+                                Forgot Password?
+
+                            </a>
+
+                        </div>
+
+
+                        <div class="input-box">
+
+                            <i class="fa-solid fa-lock"></i>
+
+                            <input
+                                type="password"
+                                id="password"
+                                placeholder="Enter your password"
+                                required
+                            >
+
+
+                            <button
+                                type="button"
+                                id="togglePassword"
+                                class="password-toggle"
+                            >
+
+                                <i class="fa-solid fa-eye"></i>
+
+                            </button>
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- REMEMBER ME -->
+
+                    <div class="remember">
+
+                        <label>
+
+                            <input
+                                type="checkbox"
+                                id="remember"
+                            >
+
+                            <span>Remember me</span>
+
+                        </label>
+
+                    </div>
+
+
+                    <!-- LOGIN BUTTON -->
+
+                    <button
+                        type="submit"
+                        class="login-submit"
+                    >
+
+                        <span>Login to Dashboard</span>
+
+                        <i class="fa-solid fa-arrow-right"></i>
+
+                    </button>
+
+
+                    <!-- MESSAGE -->
+
+                    <div
+                        id="loginMessage"
+                        class="login-message"
+                    ></div>
+
+
+                </form>
+
+
+                <div class="security">
+
+                    <i class="fa-solid fa-shield-halved"></i>
+
+                    <span>
+
+                        Secure Driver Access
+
+                    </span>
+
+                </div>
+
+
+            </div>
+
+        </div>
+
+        <!-- ================= FORGOT PASSWORD / CONTACT ADMIN MODAL ================= -->
+        <div id="forgotPasswordModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.55); z-index:9999; align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+            <div style="background:#ffffff; border-radius:14px; padding:28px 24px; max-width:440px; width:90%; box-shadow:0 15px 35px rgba(0,0,0,0.25); text-align:center;">
+                <div style="width:56px; height:56px; background:#eff6ff; color:#2563eb; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:26px; margin:0 auto 16px;">
+                    <i class="fa-solid fa-user-shield"></i>
+                </div>
+                <h3 style="font-size:20px; font-weight:700; color:#1e293b; margin-bottom:8px;">Forgot Your Password?</h3>
+                <p style="font-size:13.5px; color:#64748b; line-height:1.6; margin-bottom:16px;">
+                    Please contact the <strong>System Administrator</strong> to reset or change your driver password.<br>
+                    The administrator can update your password directly from the <strong>Admin Dashboard</strong>.
+                </p>
+                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px 16px; margin-bottom:18px; text-align:left; font-size:12.5px; color:#334155;">
+                    <div style="margin-bottom:6px;"><i class="fa-solid fa-building" style="color:#2563eb; width:18px;"></i> <strong>Transport Department:</strong> Admin Office</div>
+                    <div style="margin-bottom:6px;"><i class="fa-solid fa-user-tie" style="color:#2563eb; width:18px;"></i> <strong>Admin Contact:</strong> Available on Admin Portal</div>
+                    <div><i class="fa-solid fa-bolt" style="color:#2563eb; width:18px;"></i> <strong>Immediate Action:</strong> Admin can edit &amp; set a new password in seconds.</div>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button type="button" id="sendDriverResetEmailBtn" style="flex:1; padding:10px 14px; background:#2563eb; color:#ffffff; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;">
+                        <i class="fa-solid fa-paper-plane"></i> Email Reset Link
+                    </button>
+                    <button type="button" id="closeForgotModalBtn" style="flex:1; padding:10px 14px; background:#f1f5f9; color:#475569; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;">
+                        Close
+                    </button>
+                </div>
+                <div id="forgotModalMsg" style="font-size:12px; margin-top:12px; font-weight:600;"></div>
+            </div>
+        </div>
+
+    </main>
+
+
+    <!-- FOOTER -->
+
+    <footer>
+
+        <p>
+
+            © 2026 Smart Bus Tracking System.
+            All Rights Reserved.
+
+        </p>
+
+    </footer>
+
+
+    <!-- JAVASCRIPT -->
+
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    <script src="firebase.js"></script>
+
+    <script src="driver-login.js"></script>
+
+</body>
+
+</html>

@@ -1,0 +1,124 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Helpers ----------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function hasProfile() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return hasProfile() && myProfile().role == 'admin';
+    }
+
+    function isDriver() {
+      return hasProfile() && myProfile().role == 'driver';
+    }
+
+    function isPassenger() {
+      return hasProfile() && myProfile().role == 'passenger';
+    }
+
+    // Admins and drivers are always active.
+    // A passenger is active ONLY after the Admin has approved the account.
+    function isActive() {
+      return hasProfile() &&
+        (myProfile().role in ['admin', 'driver'] || myProfile().status == 'approved');
+    }
+
+    // ---------- USERS ----------
+    match /users/{userId} {
+      // Admin sees everyone; everyone sees their own profile;
+      // approved users can see driver profiles (name / phone of their bus driver)
+      allow read: if isAdmin() ||
+        (isSignedIn() && request.auth.uid == userId) ||
+        (isActive() && resource.data.role == 'driver');
+
+      // Admin can create any account. A passenger can only create THEIR OWN
+      // profile, and only as a "pending" passenger (needs Admin approval).
+      allow create: if isAdmin() ||
+        (isSignedIn() && request.auth.uid == userId &&
+         request.resource.data.role == 'passenger' &&
+         request.resource.data.status == 'pending' &&
+         request.resource.data.keys().hasOnly(
+           ['name', 'email', 'phone', 'role', 'status', 'routeId', 'createdAt']));
+
+      // Admin can edit any account (approve, reject ...).
+      // An approved passenger can ONLY change their own route / bus / stop choice.
+      allow update: if isAdmin() ||
+        (isSignedIn() && request.auth.uid == userId && isPassenger() && isActive() &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['routeId', 'busId', 'stopIndex']));
+
+      // Only the Admin can delete accounts
+      allow delete: if isAdmin();
+    }
+
+    // ---------- BUSES ----------
+    match /buses/{busId} {
+      allow read: if isActive();
+      allow create, delete: if isAdmin();
+
+      // Admin can edit everything. The assigned driver can ONLY change the
+      // live-location fields of their own bus.
+      allow update: if isAdmin() ||
+        (isDriver() && resource.data.assignedDriverId == request.auth.uid &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['currentLocation', 'isSharingLocation']));
+    }
+
+    // ---------- ROUTES ----------
+    match /routes/{routeId} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    // ---------- ATTENDANCE ----------
+    match /attendance/{recordId} {
+      allow read: if isAdmin() ||
+        (isSignedIn() && resource.data.driverUid == request.auth.uid);
+      allow create: if isDriver() && request.resource.data.driverUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ---------- TRIPS ----------
+    match /trips/{tripId} {
+      allow read: if isAdmin() ||
+        (isSignedIn() && resource.data.driverUid == request.auth.uid) ||
+        isPassenger() && isActive();
+      allow create: if isDriver() && request.resource.data.driverUid == request.auth.uid;
+      allow update: if isDriver() && resource.data.driverUid == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['endTime', 'status']);
+      allow delete: if isAdmin();
+    }
+
+    // ---------- NOTIFICATIONS ----------
+    match /notifications/{notifId} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    // ---------- EMERGENCY ALERTS ----------
+    match /alerts/{alertId} {
+      allow create: if isActive() && request.resource.data.uid == request.auth.uid;
+      allow read: if isAdmin() ||
+        (isSignedIn() && resource.data.uid == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    // ---------- Everything else is locked ----------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

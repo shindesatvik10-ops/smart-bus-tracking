@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title> Bus Tracking System</title>
+
+    <!-- Font Awesome -->
+    <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css"
+    >
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="style.css">
+</head> 
+
+    <body>
+
+<!-- ================= NAVBAR ================= -->
+
+<header class="header">
+
+    <nav class="navbar">
+
+        <a href="#" class="logo">
+            <i class="fa-solid fa-bus"></i>
+            <span>Smart Bus Tracker</span>
+        </a>
+
+        <ul class="nav-links" id="navLinks">
+
+            <li>
+                <a href="#home" class="active">Home</a>
+            </li>
+
+            <li>
+                <a href="#features">Features</a>
+            </li>
+
+            <!-- <li>
+                <a href="#admin">Admin</a>
+            </li> -->
+
+            <li>
+                <a href="#liveMapSection">
+                    <i class="fa-solid fa-map-location-dot"></i>
+                    Live Bus Map
+                </a>
+            </li>
+
+            <li>
+                <a href="admin-login.html">
+                    <i class="fa-solid fa-user-tie"></i>
+                    Admin
+                </a>
+            </li>
+
+            <li>
+                <a href="driver-login.html">
+                    <i class="fa-solid fa-id-card"></i>
+                    Driver
+                </a>
+            </li>
+
+            <li>
+                <a href="#help">Help</a>
+            </li>
+
+            <li>
+                <a href="#contact">Contact</a>
+            </li>
+
+        </ul>
+
+        <a href="login.html" class="login-btn">
+      <i class="fa-solid fa-right-to-bracket"></i>
+    Login
+     </a>
+        <button class="menu-btn" id="menuBtn">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+
+    </nav>
+
+</header>
+
+<!-- ================= LIVE BUS MAP & SEARCH SECTION ================= -->
+<section class="live-map-section" id="liveMapSection" style="padding: 110px 20px 70px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; scroll-margin-top: 80px;">
+    <div style="max-width: 1200px; margin: 0 auto;">
+        <div style="text-align: center; margin-bottom: 18px;">
+            <div style="display:inline-flex; align-items:center; gap:8px; background:#eff6ff; color:#2563eb; padding:5px 14px; border-radius:20px; font-size:11.5px; font-weight:700; margin-bottom:8px; border:1px solid #bfdbfe;">
+                <span style="width:8px; height:8px; background:#22c55e; border-radius:50%; display:inline-block; box-shadow:0 0 0 3px rgba(34,197,94,0.25);"></span> LIVE GPS NETWORK (NO LOGIN REQUIRED)
+            </div>
+            <h2 style="font-size: 28px; font-weight: 800; color: #0f172a; margin-bottom: 6px;">
+                Live Bus Tracking &amp; Route Search
+            </h2>
+            <p style="font-size: 14.5px; color: #64748b; max-width: 650px; margin: 0 auto;">
+                Watch active buses moving in real time. Search from your boarding stop to your destination to see assigned buses, drivers, and real-time arrival estimates.
+            </p>
+        </div>
+
+        <!-- Search Bar -->
+        <div style="background: #ffffff; padding: 14px 20px; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; margin-bottom: 16px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center;">
+            <div style="flex: 1; min-width: 220px; position: relative;">
+                <i class="fa-solid fa-circle-dot" style="position: absolute; left: 14px; top: 15px; color: #16a34a; font-size: 14px;"></i>
+                <input type="text" id="homeFromInput" list="homeStopsDatalist" placeholder="From (Boarding stop)" autocomplete="off" style="width: 100%; padding: 12px 14px 12px 38px; border: 1.5px solid #cbd5e1; border-radius: 10px; font-size: 14px; outline: none; background:#f8fafc;">
+            </div>
+
+            <div style="flex: 1; min-width: 220px; position: relative;">
+                <i class="fa-solid fa-location-dot" style="position: absolute; left: 14px; top: 15px; color: #dc2626; font-size: 14px;"></i>
+                <input type="text" id="homeToInput" list="homeStopsDatalist" placeholder="To (Destination stop)" autocomplete="off" style="width: 100%; padding: 12px 14px 12px 38px; border: 1.5px solid #cbd5e1; border-radius: 10px; font-size: 14px; outline: none; background:#f8fafc;">
+            </div>
+
+            <datalist id="homeStopsDatalist"></datalist>
+
+            <div style="display:flex; gap:10px;">
+                <button type="button" id="homeSearchBtn" style="padding: 12px 24px; background: #2563eb; color: #fff; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 14px; transition: background 0.2s;">
+                    <i class="fa-solid fa-magnifying-glass"></i> Search Buses
+                </button>
+
+                <button type="button" id="homeClearBtn" style="padding: 12px 18px; background: #f1f5f9; color: #475569; border: 1.5px solid #cbd5e1; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 13.5px;">
+                    <i class="fa-solid fa-rotate-right"></i> Clear
+                </button>
+            </div>
+        </div>
+
+        <!-- Status Message Banner -->
+        <div id="homeStatusMsg" style="display:none; padding: 12px 16px; border-radius: 10px; font-weight: 600; font-size: 13.5px; margin-bottom: 20px;"></div>
+
+        <!-- Matching Live Buses Cards -->
+        <div id="homeResultsList" style="margin-bottom: 20px;"></div>
+
+        <!-- Map Container with Explicit Height -->
+        <div style="position: relative; border-radius: 18px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.12); border: 1px solid #cbd5e1;">
+            <div id="homeLiveMap" style="width: 100%; height: 560px; z-index: 1;"></div>
+        </div>
+    </div>
+</section>
+
+<!-- ================= HERO SECTION ================= -->
+
+<section class="hero" id="home">
+
+    <div class="hero-content">
+
+        <div class="hero-text">
+
+            <div class="small-title">
+                <i class="fa-solid fa-location-dot"></i>
+                SMART TRANSPORTATION
+            </div>
+
+            <h1>
+                Track Your
+                <span> Bus In Real Time</span>
+                
+            </h1>
+
+            <p>
+                Know where your bus is, when it will arrive,
+                and stay connected throughout your journey.
+                Safe, smart and reliable public transportation.
+            </p>
+
+            <div class="hero-buttons">
+
+                <a href="#liveMapSection" class="primary-btn">
+                    <i class="fa-solid fa-location-dot"></i>
+                    Track Bus Live
+                </a>
+
+                <a href="#features" class="secondary-btn">
+                    Explore Features
+                    <i class="fa-solid fa-arrow-right"></i>
+                </a>
+
+            </div>
+
+            <div class="hero-stats">
+
+                <div class="stat">
+                    <i class="fa-solid fa-location-crosshairs"></i>
+                    <div>
+                        <strong>Live</strong>
+                        <span>Tracking</span>
+                    </div>
+                </div>
+
+                <div class="stat">
+                    <i class="fa-solid fa-clock"></i>
+                    <div>
+                        <strong>Real-Time</strong>
+                        <span>ETA</span>
+                    </div>
+                </div>
+
+                <div class="stat">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <div>
+                        <strong>Safe</strong>
+                        <span>Journey</span>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="hero-image">
+
+            <div class="image-circle"></div>
+
+            <img src="bus.png" alt="Smart Bus Tracking">
+
+            <!-- <div class="tracking-card">
+
+                <div class="tracking-icon">
+                    <i class="fa-solid fa-location-dot"></i>
+                </div> -->
+
+                <!-- <div>
+                    <small>Bus Status</small>
+                    <strong>Live &nbsp; • &nbsp; On Route</strong>
+                </div> -->
+
+                <span class="online-dot"></span>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</section>
+
+<!-- ================= FEATURES ================= -->
+
+<section class="features-section" id="features">
+
+    <div class="section-heading">
+
+        <span>OUR FEATURES</span>
+
+        <h2>
+            Everything You Need For
+            <strong>Smart Bus Tracking</strong>
+        </h2>
+
+        <p>
+            Simple and powerful features designed to make public
+            transportation safer and more convenient.
+        </p>
+
+    </div>
+
+
+    <div class="features-container">
+
+        <div class="feature-card">
+
+            <div class="feature-icon blue">
+                <i class="fa-solid fa-location-dot"></i>
+            </div>
+
+            <h3>Live Tracking</h3>
+
+            <p>
+                Track your  bus location in real time using GPS.
+            </p>
+
+        </div>
+
+
+        <div class="feature-card">
+
+            <div class="feature-icon green">
+                <i class="fa-solid fa-clock"></i>
+            </div>
+
+            <h3>Accurate ETA</h3>
+
+            <p>
+                Get estimated arrival time and avoid unnecessary waiting.
+            </p>
+
+        </div>
+
+
+        <div class="feature-card">
+
+            <div class="feature-icon orange">
+                <i class="fa-solid fa-bell"></i>
+            </div>
+
+            <h3>Notifications</h3>
+
+            <p>
+                Receive updates about bus arrival, delays and route changes.
+            </p>
+
+        </div>
+
+
+        <div class="feature-card">
+
+            <div class="feature-icon purple">
+                <i class="fa-solid fa-shield-halved"></i>
+            </div>
+
+            <h3>Safe & Reliable</h3>
+
+            <p>
+                Improve transit safety with reliable transportation monitoring.
+            </p>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- ================= HOW IT WORKS ================= -->
+
+<section class="how-section">
+
+    <div class="section-heading">
+
+        <span>HOW IT WORKS</span>
+
+        <h2>
+            Simple. Smart.
+            <strong>Connected.</strong>
+        </h2>
+
+    </div>
+
+
+    <div class="steps-container">
+
+        <div class="step">
+
+            <div class="step-number">01</div>
+
+            <i class="fa-solid fa-user-shield"></i>
+
+            <h3>Admin</h3>
+
+            <p>
+                Admin manages buses, drivers and routes.
+            </p>
+
+        </div>
+
+
+        <div class="step-line"></div>
+
+
+        <div class="step">
+
+            <div class="step-number">02</div>
+
+            <i class="fa-solid fa-bus"></i>
+
+            <h3>Driver</h3>
+
+            <p>
+                Driver starts the trip and shares live GPS location.
+            </p>
+
+        </div>
+
+
+        <div class="step-line"></div>
+
+
+        <div class="step">
+
+            <div class="step-number">03</div>
+
+            <i class="fa-solid fa-satellite-dish"></i>
+
+            <h3>GPS</h3>
+
+            <p>
+                Location is updated continuously in real time.
+            </p>
+
+        </div>
+
+
+        <div class="step-line"></div>
+
+
+        <div class="step">
+
+            <div class="step-number">04</div>
+
+            <i class="fa-solid fa-mobile-screen-button"></i>
+
+            <h3>Live Map</h3>
+
+            <p>
+                View live bus locations and real-time ETAs on the map.
+            </p>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- ================= CTA ================= -->
+
+<section class="cta-section">
+
+    <div class="cta-content">
+
+        <div>
+            <span>READY TO GET STARTED?</span>
+
+            <h2>
+                Never Miss Your Bus Again.
+            </h2>
+
+            <p>
+                Track your  bus anytime, anywhere.
+            </p>
+        </div>
+
+        <a href="#" class="cta-btn">
+            Start Tracking
+            <i class="fa-solid fa-arrow-right"></i>
+        </a>
+
+    </div>
+
+</section>
+
+
+<!-- ================= FOOTER ================= -->
+
+<footer id="contact">
+
+    <div class="footer-container">
+
+        <div class="footer-about">
+
+            <a href="#" class="footer-logo">
+                <i class="fa-solid fa-bus"></i>
+                smart Bus Tracker
+            </a>
+
+            <p>
+                Smart, safe and reliable Smart transportation
+                tracking system.
+            </p>
+
+        </div>
+
+
+        <div class="footer-links">
+
+            <h3>Quick Links</h3>
+
+            <a href="#home">Home</a>
+            <a href="#features">Features</a>
+            <a href="#help">Help</a>
+            <a href="#contact">Contact</a>
+
+        </div>
+
+
+        <div class="footer-links">
+
+            <h3>Dashboard</h3>
+
+            <a href="admin-login.html">Admin</a>
+            <a href="#liveMapSection">Live Bus Map</a>
+            <a href="driver-login.html">Driver</a>
+            <a href="login.html">Portal Login</a>
+
+        </div>
+
+
+        <div class="footer-links" id="help">
+
+            <h3>Contact</h3>
+
+            <p>
+                <i class="fa-solid fa-envelope"></i>
+                support@Smartebus.com
+            </p>
+
+            <p>
+                <i class="fa-solid fa-phone"></i>
+                +91 XXXXX XXXXX
+            </p>
+
+        </div>
+
+    </div>
+
+
+    <div class="copyright">
+
+        © 2026 Smart Bus Tracking System.
+        All Rights Reserved.
+
+    </div>
+    
+
+</footer>
+
+
+<!-- Leaflet JS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+
+<!-- Firebase Compat SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="firebase.js"></script>
+
+<!-- Shared Live Map Script -->
+<script src="live-map.js"></script>
+<script>
+    function startMap() {
+        if (typeof initLiveMap === "function") {
+            initLiveMap("homeLiveMap", {
+                fromInputId: "homeFromInput",
+                toInputId: "homeToInput",
+                datalistId: "homeStopsDatalist",
+                searchBtnId: "homeSearchBtn",
+                clearBtnId: "homeClearBtn",
+                resultsContainerId: "homeResultsList",
+                statusMsgId: "homeStatusMsg",
+            });
+        } else {
+            setTimeout(startMap, 150);
+        }
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", startMap);
+    } else {
+        startMap();
+    }
+</script>
+
+<script src="script.js"></script>
+
+</body>
+</html>

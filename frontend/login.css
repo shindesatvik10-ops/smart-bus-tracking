@@ -1,0 +1,232 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background: #f5f7fb;
+    color: #1e293b;
+}
+
+
+/* NAVBAR */
+
+.header {
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.navbar {
+    max-width: 1200px;
+    margin: auto;
+
+    padding: 18px 30px;
+
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.logo {
+    text-decoration: none;
+    color: #102a43;
+
+    font-size: 21px;
+    font-weight: bold;
+
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.logo i {
+    color: #2563eb;
+    font-size: 25px;
+}
+
+.back-home {
+    text-decoration: none;
+    color: #64748b;
+    font-size: 14px;
+}
+
+.back-home:hover {
+    color: #2563eb;
+}
+
+
+/* LOGIN PAGE */
+
+.login-page {
+    min-height: calc(100vh - 130px);
+
+    padding: 70px 25px;
+}
+
+.login-heading {
+    text-align: center;
+    margin-bottom: 45px;
+}
+
+.login-heading span {
+    color: #2563eb;
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+.login-heading h1 {
+    margin-top: 10px;
+    font-size: 38px;
+    color: #102a43;
+}
+
+.login-heading p {
+    margin-top: 12px;
+    color: #64748b;
+}
+
+
+/* CARDS */
+
+.login-options {
+    max-width: 1100px;
+    margin: auto;
+
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+
+    gap: 25px;
+}
+
+.login-card {
+    background: white;
+
+    padding: 40px 30px;
+
+    border-radius: 18px;
+
+    text-align: center;
+
+    text-decoration: none;
+    color: #1e293b;
+
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.06);
+
+    transition: 0.3s;
+}
+
+.login-card:hover {
+    transform: translateY(-8px);
+
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.12);
+}
+
+
+/* ROLE ICON */
+
+.role-icon {
+    width: 75px;
+    height: 75px;
+
+    margin: auto;
+
+    border-radius: 20px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    font-size: 30px;
+
+    margin-bottom: 22px;
+}
+
+.admin-icon {
+    background: #dbeafe;
+    color: #2563eb;
+}
+
+.driver-icon {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+
+/* CARD CONTENT */
+
+.login-card h2 {
+    font-size: 24px;
+    margin-bottom: 12px;
+}
+
+.login-card p {
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 65px;
+}
+
+.login-link {
+    margin-top: 20px;
+
+    color: #2563eb;
+
+    font-weight: bold;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+}
+
+
+/* FOOTER */
+
+footer {
+    text-align: center;
+
+    padding: 20px;
+
+    color: #64748b;
+
+    font-size: 13px;
+}
+
+
+/* RESPONSIVE */
+
+@media (max-width: 800px) {
+
+    .login-options {
+        grid-template-columns: 1fr;
+        max-width: 450px;
+    }
+
+    .login-heading h1 {
+        font-size: 30px;
+    }
+
+}
+
+@media (max-width: 500px) {
+
+    .navbar {
+        padding: 15px;
+    }
+
+    .logo span {
+        font-size: 16px;
+    }
+
+    .login-page {
+        padding: 50px 15px;
+    }
+
+    .login-card {
+        padding: 30px 20px;
+    }
+
+}
