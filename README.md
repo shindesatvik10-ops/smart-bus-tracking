@@ -75,8 +75,3 @@ A real-time public transit tracking and fleet management system built with **van
 * Place your `serviceAccountKey.json` inside `backend/` if connecting to Firebase Admin SDK.
 * Realtime Database security rules are available in `database.rules.json`.
 * Firestore security rules are available in `firestore.rules`.
-
----
-
-## 📄 License
-This project is open source and available under the [MIT License](LICENSE).
