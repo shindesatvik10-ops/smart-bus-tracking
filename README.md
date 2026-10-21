@@ -65,8 +65,8 @@ A real-time public transit tracking and fleet management system built with **van
 
 4. **Open in your browser:**
    * **Passenger Live Map:** `http://localhost:5000/`
-   * **Admin Login:** `http://localhost:5000/admin-login.html` (Default: `Admin` / `123`)
-   * **Driver Login:** `http://localhost:5000/driver-login.html` (Default: `Sunil Shinde` / `password123`)
+   * **Admin Login:** `http://localhost:5000/admin-login.html`
+   * **Driver Login:** `http://localhost:5000/driver-login.html` 
 
 ---
 
