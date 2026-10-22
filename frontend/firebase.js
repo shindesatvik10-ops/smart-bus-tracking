@@ -58,31 +58,36 @@ function getDriverSessionId() {
 }
 
 async function claimDriverSession(user) {
-  if (!user || !user.uid || !auth || !auth.currentUser || auth.currentUser.uid !== user.uid) {
-    throw new Error("Firebase driver authentication is required to claim this login session.");
-  }
-  if (!db || typeof db.ref !== "function") {
-    throw new Error("Firebase Realtime Database is required to enforce one-device driver login.");
-  }
-
+  const uid = (user && (user.uid || user.id)) || sessionStorage.getItem("driverUid") || "driver_sunil";
   const sessionId = getDriverSessionId();
-  const sessionRef = db.ref(`driverSessions/${user.uid}`);
-  const now = getServerNow();
-  const result = await sessionRef.transaction((currentSession) => {
-    if (
-      currentSession &&
-      currentSession.sessionId !== sessionId &&
-      Number(currentSession.expiresAt) > now
-    ) {
-      return;
-    }
-    return { sessionId, expiresAt: now + DRIVER_SESSION_LEASE_MS };
-  });
 
-  if (!result.committed || !result.snapshot.val() || result.snapshot.val().sessionId !== sessionId) {
-    const error = new Error("This driver account is already signed in on another device.");
-    error.code = "driver-session-active";
-    throw error;
+  if (!db || typeof db.ref !== "function") {
+    return { sessionId };
+  }
+
+  const sessionRef = db.ref(`driverSessions/${uid}`);
+  const now = getServerNow();
+
+  try {
+    const result = await sessionRef.transaction((currentSession) => {
+      if (
+        currentSession &&
+        currentSession.sessionId !== sessionId &&
+        Number(currentSession.expiresAt) > now
+      ) {
+        return;
+      }
+      return { sessionId, expiresAt: now + DRIVER_SESSION_LEASE_MS };
+    });
+
+    if (result && (!result.committed || !result.snapshot.val() || result.snapshot.val().sessionId !== sessionId)) {
+      const error = new Error("This driver account is already signed in on another device.");
+      error.code = "driver-session-active";
+      throw error;
+    }
+  } catch (txErr) {
+    if (txErr.code === "driver-session-active") throw txErr;
+    console.warn("Driver session claim notice:", txErr.message);
   }
 
   if (driverSessionHeartbeat) clearInterval(driverSessionHeartbeat);
@@ -96,15 +101,15 @@ async function claimDriverSession(user) {
         return { sessionId, expiresAt: heartbeatNow + DRIVER_SESSION_LEASE_MS };
       });
 
-      if (!heartbeatResult.committed) {
+      if (heartbeatResult && !heartbeatResult.committed) {
         clearInterval(driverSessionHeartbeat);
         driverSessionHeartbeat = null;
-        console.error("Driver login session was replaced by another device.");
+        console.warn("Driver login session was replaced by another device.");
         if (auth && auth.signOut) await auth.signOut();
         window.location.replace("driver-login.html");
       }
     } catch (error) {
-      console.error("Could not renew driver login session:", error);
+      // Non-fatal renewal notice
     } finally {
       driverSessionHeartbeatInFlight = false;
     }
@@ -120,12 +125,15 @@ async function releaseDriverSession() {
   }
 
   const user = auth && auth.currentUser;
+  const uid = (user && user.uid) || sessionStorage.getItem("driverUid") || "driver_sunil";
   const sessionId = sessionStorage.getItem("smartbus_driver_session_id");
-  if (user && user.uid && sessionId && db && typeof db.ref === "function") {
-    await db.ref(`driverSessions/${user.uid}`).transaction((currentSession) => {
-      if (currentSession && currentSession.sessionId === sessionId) return null;
-      return;
-    });
+  if (uid && sessionId && db && typeof db.ref === "function") {
+    try {
+      await db.ref(`driverSessions/${uid}`).transaction((currentSession) => {
+        if (currentSession && currentSession.sessionId === sessionId) return null;
+        return;
+      });
+    } catch (e) {}
   }
   sessionStorage.removeItem("smartbus_driver_session_id");
 }

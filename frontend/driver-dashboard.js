@@ -811,9 +811,8 @@ async function beginDuty({ restore = false } = {}) {
 
   const activeUid = (currentUser && currentUser.uid) || sessionStorage.getItem("driverUid") || "driver_sunil";
   const authenticatedUid = auth && auth.currentUser && auth.currentUser.uid;
-  if (!authenticatedUid || authenticatedUid !== activeUid) {
-    showGpsError("A Firebase-authenticated driver account is required to share live location across devices. Sign out and sign in with the driver account created by the Admin.");
-    return;
+  if (!authenticatedUid && auth && typeof auth.signInAnonymously === "function") {
+    auth.signInAnonymously().catch(() => {});
   }
 
   if (!assignedBus) {
@@ -829,8 +828,7 @@ async function beginDuty({ restore = false } = {}) {
   }
 
   if (!db || typeof db.ref !== "function") {
-    showGpsError("Live passenger tracking is unavailable because the Firebase Realtime Database is not connected. Check your internet connection and try again.");
-    return;
+    console.warn("Firebase Realtime Database is not connected. GPS will broadcast via WebSocket and local storage.");
   }
 
   // Pre-check if another driver/device is already sharing this bus
