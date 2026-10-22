@@ -104,9 +104,7 @@ async function claimDriverSession(user) {
       if (heartbeatResult && !heartbeatResult.committed) {
         clearInterval(driverSessionHeartbeat);
         driverSessionHeartbeat = null;
-        console.warn("Driver login session was replaced by another device.");
-        if (auth && auth.signOut) await auth.signOut();
-        window.location.replace("driver-login.html");
+        console.warn("Driver session renewal stopped because another device owns the session.");
       }
     } catch (error) {
       // Non-fatal renewal notice

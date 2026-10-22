@@ -223,6 +223,7 @@ function buildPopupHtml(busNo, live, loc, bus, route, driverName) {
     loc.heading != null && !isNaN(loc.heading) ? `${Math.round(loc.heading)}°` : "N/A";
   const accuracyText =
     loc.accuracy != null && !isNaN(loc.accuracy) ? `±${Math.round(loc.accuracy)}m` : "";
+  const isApproximateLocation = Number(loc.accuracy) > 100;
 
   if (live) {
     return `
@@ -231,8 +232,8 @@ function buildPopupHtml(busNo, live, loc, bus, route, driverName) {
           <div style="background:#2563eb; color:#fff; padding:4px 8px; border-radius:6px; font-weight:700; font-size:13px;">
             ${busNo}
           </div>
-          <span style="font-size:11px; background:#dcfce7; color:#166534; padding:2px 7px; border-radius:12px; font-weight:700; border:1px solid #bbf7d0;">
-            ● LIVE GPS
+          <span style="font-size:11px; background:${isApproximateLocation ? "#fef3c7" : "#dcfce7"}; color:${isApproximateLocation ? "#92400e" : "#166534"}; padding:2px 7px; border-radius:12px; font-weight:700; border:1px solid ${isApproximateLocation ? "#fde68a" : "#bbf7d0"};">
+            ${isApproximateLocation ? "● APPROXIMATE" : "● LIVE GPS"}
           </span>
         </div>
         <div style="font-size:12px; color:#475569; margin-bottom:4px;">

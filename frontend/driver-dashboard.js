@@ -31,9 +31,13 @@ let driverRoutePolyline = null;
 let driverStopMarkers = [];
 let lastSentTickerInterval = null;
 let isLocationWritePending = false;
+let locationRetryTimer = null;
 
 const DEFAULT_CENTER = [16.7050, 74.2433];
 const ACTIVE_DUTY_STORAGE_KEY = "smartbus_active_duties";
+const PENDING_LOCATIONS_STORAGE_KEY = "smartbus_pending_locations";
+const PRECISE_GPS_ACCURACY_METERS = 100;
+const MAX_BROADCAST_GPS_ACCURACY_METERS = 250;
 
 function readActiveDuties() {
   try {
@@ -60,6 +64,124 @@ function clearSavedActiveDuty(driverUid) {
   const activeDuties = readActiveDuties();
   delete activeDuties[driverUid];
   localStorage.setItem(ACTIVE_DUTY_STORAGE_KEY, JSON.stringify(activeDuties));
+}
+
+function readPendingLocations() {
+  try {
+    return JSON.parse(localStorage.getItem(PENDING_LOCATIONS_STORAGE_KEY) || "{}");
+  } catch (error) {
+    console.warn("Could not read saved GPS update:", error.message);
+    return {};
+  }
+}
+
+function queueLocationUpdate(busNo, driverUid, payload, capturedAt) {
+  const pendingLocations = readPendingLocations();
+  pendingLocations[busNo] = { driverUid, payload, capturedAt };
+  localStorage.setItem(PENDING_LOCATIONS_STORAGE_KEY, JSON.stringify(pendingLocations));
+}
+
+function clearQueuedLocation(busNo, capturedAt) {
+  const pendingLocations = readPendingLocations();
+  if (pendingLocations[busNo] && pendingLocations[busNo].capturedAt === capturedAt) {
+    delete pendingLocations[busNo];
+    localStorage.setItem(PENDING_LOCATIONS_STORAGE_KEY, JSON.stringify(pendingLocations));
+  }
+}
+
+function clearQueuedLocationForBus(busNo) {
+  const pendingLocations = readPendingLocations();
+  if (pendingLocations[busNo]) {
+    delete pendingLocations[busNo];
+    localStorage.setItem(PENDING_LOCATIONS_STORAGE_KEY, JSON.stringify(pendingLocations));
+  }
+}
+
+function showLocationWaitingForNetwork() {
+  hasLiveGpsFix = false;
+  if (gpsStatusBadge) {
+    gpsStatusBadge.style.background = "#fef3c7";
+    gpsStatusBadge.style.color = "#92400e";
+    gpsStatusBadge.innerHTML = `<span style="width:8px; height:8px; background:#f59e0b; border-radius:50%; display:inline-block;"></span> GPS saved on device; waiting for network`;
+  }
+  if (tripLiveIndicator) tripLiveIndicator.style.display = "none";
+  if (tripBadge) tripBadge.style.display = "none";
+  if (broadcastStatusBanner) broadcastStatusBanner.style.display = "none";
+  if (tripStatText) tripStatText.textContent = "GPS saved on device; waiting for network";
+  updateAttendanceUI(todayAttendanceMarked);
+}
+
+async function flushQueuedLocation() {
+  if (isLocationWritePending || !isDutyActive || !navigator.onLine || !db || typeof db.ref !== "function") return;
+
+  const queuedLocations = readPendingLocations();
+  const queued = queuedLocations[assignedBus];
+  const activeUid = (currentUser && currentUser.uid) || sessionStorage.getItem("driverUid");
+  if (!queued || queued.driverUid !== activeUid || !queued.payload) return;
+
+  isLocationWritePending = true;
+  try {
+    await db.ref(`locations/${assignedBus}`).set(queued.payload);
+    if (!isDutyActive) return;
+    clearQueuedLocation(assignedBus, queued.capturedAt);
+
+    lastSentTime = queued.capturedAt;
+    lastSentLat = queued.payload.lat;
+    lastSentLng = queued.payload.lng;
+    hasLiveGpsFix = true;
+    updateLastSentUI();
+
+    try {
+      const localLocations = JSON.parse(localStorage.getItem("smartbus_locations") || "{}");
+      localLocations[assignedBus] = { ...queued.payload, ts: queued.capturedAt };
+      localStorage.setItem("smartbus_locations", JSON.stringify(localLocations));
+      window.dispatchEvent(new Event("storage"));
+    } catch (storageError) {
+      console.warn("Could not update the local GPS cache:", storageError.message);
+    }
+
+    const isApproximate = queued.payload.accuracy > PRECISE_GPS_ACCURACY_METERS;
+    if (gpsStatusBadge) {
+      gpsStatusBadge.style.background = isApproximate ? "#fef3c7" : "#dcfce7";
+      gpsStatusBadge.style.color = isApproximate ? "#92400e" : "#166534";
+      gpsStatusBadge.innerHTML = isApproximate
+        ? `<span style="width:8px; height:8px; background:#f59e0b; border-radius:50%; display:inline-block;"></span> Approximate GPS Shared (±${queued.payload.accuracy}m)`
+        : `<span style="width:8px; height:8px; background:#22c55e; border-radius:50%; display:inline-block;"></span> Real GPS Shared with Passengers`;
+    }
+    if (tripLiveIndicator) {
+      tripLiveIndicator.innerHTML = isApproximate
+        ? `<span class="pulse-dot" style="display:inline-block; width:8px; height:8px; background:#f59e0b; border-radius:50%; margin-right:4px;"></span> ● APPROXIMATE GPS (±${queued.payload.accuracy}m)`
+        : `<span class="pulse-dot" style="display:inline-block; width:8px; height:8px; background:#22c55e; border-radius:50%; margin-right:4px;"></span> ● SHARING LIVE GPS`;
+      tripLiveIndicator.style.background = isApproximate ? "#fef3c7" : "#dcfce7";
+      tripLiveIndicator.style.color = isApproximate ? "#92400e" : "#166534";
+      tripLiveIndicator.style.borderColor = isApproximate ? "#fde68a" : "#bbf7d0";
+      tripLiveIndicator.style.display = "inline-block";
+    }
+    if (tripBadge) {
+      tripBadge.textContent = isApproximate ? "GPS ~" : "LIVE";
+      tripBadge.style.display = "inline-block";
+    }
+    if (broadcastStatusBanner) broadcastStatusBanner.style.display = "flex";
+    if (tripStatText) tripStatText.textContent = isApproximate ? "Sharing Approximate GPS" : "Sharing Real GPS";
+    updateAttendanceUI(todayAttendanceMarked);
+  } catch (error) {
+    console.warn("GPS update queued until network is available:", error.message);
+    showLocationWaitingForNetwork();
+    if (locationRetryTimer) clearTimeout(locationRetryTimer);
+    locationRetryTimer = setTimeout(() => {
+      locationRetryTimer = null;
+      flushQueuedLocation();
+    }, 5000);
+  } finally {
+    isLocationWritePending = false;
+  }
+
+  const latestQueued = readPendingLocations()[assignedBus];
+  if (latestQueued && latestQueued.capturedAt !== queued.capturedAt) {
+    if (locationRetryTimer) clearTimeout(locationRetryTimer);
+    locationRetryTimer = null;
+    flushQueuedLocation();
+  }
 }
 
 // ================= DEFAULT KOLHAPUR SEEDS =================
@@ -600,34 +722,31 @@ function updateDriverNameUI(name) {
 // ================================
 // ATTENDANCE LOGIC
 // ================================
-function checkTodayAttendance() {
+async function checkTodayAttendance() {
   const uid = (currentUser && currentUser.uid) || sessionStorage.getItem("driverUid") || "driver_sunil";
   const today = new Date().toISOString().split("T")[0];
 
-  let isMarked = false;
   let markedRecord = null;
 
   try {
     const localAtt = JSON.parse(localStorage.getItem("smartbus_attendance") || "{}");
-    if (localAtt[`${uid}_${today}`]) {
-      isMarked = true;
-      markedRecord = localAtt[`${uid}_${today}`];
-    }
-  } catch (e) {}
-
-  updateAttendanceUI(isMarked, markedRecord);
+    markedRecord = localAtt[`${uid}_${today}`] || null;
+  } catch (error) {
+    console.warn("Could not read saved attendance:", error.message);
+  }
 
   // Also verify with cloud RTDB if connected
   if (db && typeof db.ref === "function") {
     try {
-      db.ref(`attendance/${uid}_${today}`).once("value", (snap) => {
-        const val = snap.val();
-        if (val) {
-          updateAttendanceUI(true, val);
-        }
-      });
-    } catch (e) {}
+      const snap = await db.ref(`attendance/${uid}_${today}`).once("value");
+      markedRecord = snap.val() || markedRecord;
+    } catch (error) {
+      console.warn("Could not verify attendance from Realtime Database:", error.message);
+    }
   }
+
+  updateAttendanceUI(Boolean(markedRecord), markedRecord);
+  return Boolean(markedRecord);
 }
 
 function openLocationShareModal() {
@@ -749,10 +868,10 @@ function updateAttendanceUI(isMarked, record = null) {
   }
 }
 
-async function markAttendanceForToday(showPopup = true) {
+async function markAttendanceForToday() {
   const uid = (currentUser && currentUser.uid) || sessionStorage.getItem("driverUid") || "driver_sunil";
   if (todayAttendanceMarked) {
-    if (showPopup && !isDutyActive) await beginDuty();
+    if (!isDutyActive) await beginDuty();
     return;
   }
 
@@ -793,13 +912,11 @@ async function markAttendanceForToday(showPopup = true) {
   updateAttendanceUI(true, attRecord);
   loadShiftDutyHistory();
 
-  // 4. Start live GPS sharing from the attendance action
-  if (showPopup) {
-    if (!isDutyActive) {
-      await beginDuty();
-    } else {
-      alert(`✓ Attendance Marked!\n\nDriver: ${driverName}\nStatus: PRESENT\n(Live GPS Location Sharing is already active)`);
-    }
+  // Attendance is an explicit driver action; start GPS immediately after it is saved.
+  if (!isDutyActive) {
+    await beginDuty();
+  } else {
+    alert(`✓ Attendance Marked!\n\nDriver: ${driverName}\nStatus: PRESENT\n(Live GPS Location Sharing is already active)`);
   }
 }
 
@@ -808,6 +925,10 @@ async function markAttendanceForToday(showPopup = true) {
 // ================================
 async function beginDuty({ restore = false } = {}) {
   if (isDutyActive) return;
+  if (!todayAttendanceMarked) {
+    showGpsError("Mark your attendance before starting GPS sharing.");
+    return;
+  }
 
   const activeUid = (currentUser && currentUser.uid) || sessionStorage.getItem("driverUid") || "driver_sunil";
   const authenticatedUid = auth && auth.currentUser && auth.currentUser.uid;
@@ -854,19 +975,10 @@ async function beginDuty({ restore = false } = {}) {
 
   isDutyActive = true;
   hasLiveGpsFix = false;
-
-  // 1. Automatically mark attendance for today if not already marked
-  if (!restore && !todayAttendanceMarked) {
-    try {
-      await markAttendanceForToday(false);
-    } catch (attErr) {
-      console.warn("Auto attendance notice:", attErr.message);
-    }
-  }
   updateAttendanceUI(todayAttendanceMarked);
 
-  const savedDuty = readActiveDuties()[activeUid];
-  const shiftStartedAt = restore && savedDuty && savedDuty.startedAt ? savedDuty.startedAt : Date.now();
+  const savedDuty = restore ? readActiveDuties()[activeUid] : null;
+  const shiftStartedAt = savedDuty && savedDuty.busNo === assignedBus ? savedDuty.startedAt : Date.now();
   const nowStr = new Date(shiftStartedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
   if (dutyShiftStart) dutyShiftStart.textContent = nowStr;
 
@@ -938,6 +1050,7 @@ async function beginDuty({ restore = false } = {}) {
       timeout: 15000,
     }
   );
+  flushQueuedLocation();
 
   // Interval updating the "Last sent: Ns ago" ticker
   if (lastSentTickerInterval) clearInterval(lastSentTickerInterval);
@@ -954,6 +1067,15 @@ async function endDuty() {
     clearSavedActiveDuty(activeUid);
   } catch (storageErr) {
     console.warn("Could not clear saved duty state:", storageErr.message);
+  }
+  try {
+    clearQueuedLocationForBus(assignedBus);
+  } catch (storageErr) {
+    console.warn("Could not clear saved GPS update:", storageErr.message);
+  }
+  if (locationRetryTimer) {
+    clearTimeout(locationRetryTimer);
+    locationRetryTimer = null;
   }
   updateAttendanceUI(todayAttendanceMarked);
 
@@ -1017,36 +1139,34 @@ async function endDuty() {
   }
 }
 
-// GPS Update Handler with accuracy rejection and throttling
+// GPS Update Handler with accuracy tiers and throttling
 async function onGpsUpdate(position) {
   if (!isDutyActive) return;
 
   const coords = position.coords;
   const accuracy = coords.accuracy;
+  const isApproximateLocation = accuracy > PRECISE_GPS_ACCURACY_METERS;
 
-  // Reject poor readings: ignore positions with accuracy > 100 m
-  if (accuracy > 100) {
-    hasLiveGpsFix = false;
-    if (tripLiveIndicator) tripLiveIndicator.style.display = "none";
-    if (tripBadge) tripBadge.style.display = "none";
-    if (broadcastStatusBanner) broadcastStatusBanner.style.display = "none";
-    updateAttendanceUI(todayAttendanceMarked);
+  // Keep waiting for a usable position rather than publishing very uncertain coordinates.
+  if (accuracy > MAX_BROADCAST_GPS_ACCURACY_METERS) {
     if (dutyGpsAccuracy) {
       dutyGpsAccuracy.innerHTML = `<span style="color:#dc2626;">±${Math.round(accuracy)}m (Weak)</span>`;
     }
     if (gpsStatusBadge) {
       gpsStatusBadge.style.background = "#fef3c7";
       gpsStatusBadge.style.color = "#92400e";
-      gpsStatusBadge.innerHTML = `<span style="width:8px; height:8px; background:#f59e0b; border-radius:50%; display:inline-block;"></span> Weak GPS Signal (±${Math.round(accuracy)}m > 100m) - Point Ignored`;
+      gpsStatusBadge.innerHTML = `<span style="width:8px; height:8px; background:#f59e0b; border-radius:50%; display:inline-block;"></span> GPS too imprecise to share (±${Math.round(accuracy)}m). Move outdoors for a clearer signal.`;
     }
-    if (tripStatText) tripStatText.textContent = "Waiting for Accurate GPS";
+    if (tripStatText) tripStatText.textContent = hasLiveGpsFix ? "Last GPS point shared; waiting for better accuracy" : "Waiting for a better GPS signal";
     return;
   }
 
   clearGpsError();
 
   if (dutyGpsAccuracy) {
-    dutyGpsAccuracy.innerHTML = `<span style="color:#16a34a; font-weight:700;">±${Math.round(accuracy)}m</span>`;
+    const accuracyColor = isApproximateLocation ? "#b45309" : "#16a34a";
+    const accuracyLabel = isApproximateLocation ? " (Approximate)" : "";
+    dutyGpsAccuracy.innerHTML = `<span style="color:${accuracyColor}; font-weight:700;">±${Math.round(accuracy)}m${accuracyLabel}</span>`;
   }
 
   let speedMs = 0;
@@ -1072,16 +1192,6 @@ async function onGpsUpdate(position) {
     );
   }
 
-  if (!navigator.onLine) {
-    hasLiveGpsFix = false;
-    if (tripLiveIndicator) tripLiveIndicator.style.display = "none";
-    if (tripBadge) tripBadge.style.display = "none";
-    if (broadcastStatusBanner) broadcastStatusBanner.style.display = "none";
-    updateAttendanceUI(todayAttendanceMarked);
-    showGpsError("No internet connection. Your real GPS location has not been sent to passengers; sharing will resume when the connection returns.");
-    return;
-  }
-
   const now = Date.now();
   const timeSinceLastSend = now - lastSentTime;
   let distFromLastSent = Infinity;
@@ -1092,7 +1202,7 @@ async function onGpsUpdate(position) {
 
   const shouldSend = timeSinceLastSend >= 3000 && (distFromLastSent >= 5 || timeSinceLastSend >= 10000);
 
-  if (shouldSend && !isLocationWritePending) {
+  if (shouldSend) {
     const payload = {
       lat: Number(coords.latitude),
       lng: Number(coords.longitude),
@@ -1102,46 +1212,17 @@ async function onGpsUpdate(position) {
       ts: typeof serverTimestamp === "function" ? serverTimestamp() : (typeof firebase !== "undefined" && firebase.database ? firebase.database.ServerValue.TIMESTAMP : now),
     };
 
-    isLocationWritePending = true;
     try {
-      await db.ref(`locations/${assignedBus}`).set(payload);
-      if (!isDutyActive) return;
-
-      lastSentTime = now;
-      lastSentLat = coords.latitude;
-      lastSentLng = coords.longitude;
-      hasLiveGpsFix = true;
-      updateLastSentUI();
-
-      try {
-        const locs = JSON.parse(localStorage.getItem("smartbus_locations") || "{}");
-        locs[assignedBus] = { ...payload, ts: now };
-        localStorage.setItem("smartbus_locations", JSON.stringify(locs));
-        window.dispatchEvent(new Event("storage"));
-      } catch (storageErr) {
-        console.warn("Local location cache notice:", storageErr.message);
+      const driverUid = (currentUser && currentUser.uid) || sessionStorage.getItem("driverUid");
+      queueLocationUpdate(assignedBus, driverUid, payload, now);
+      if (!navigator.onLine) {
+        showLocationWaitingForNetwork();
+      } else {
+        void flushQueuedLocation();
       }
-
-      if (gpsStatusBadge) {
-        gpsStatusBadge.style.background = "#dcfce7";
-        gpsStatusBadge.style.color = "#166534";
-        gpsStatusBadge.innerHTML = `<span style="width:8px; height:8px; background:#22c55e; border-radius:50%; display:inline-block;"></span> Real GPS Shared with Passengers`;
-      }
-      if (tripLiveIndicator) tripLiveIndicator.style.display = "inline-block";
-      if (tripBadge) tripBadge.style.display = "inline-block";
-      if (broadcastStatusBanner) broadcastStatusBanner.style.display = "flex";
-      if (tripStatText) tripStatText.textContent = "Sharing Real GPS";
-      updateAttendanceUI(todayAttendanceMarked);
-    } catch (err) {
-      hasLiveGpsFix = false;
-      if (tripLiveIndicator) tripLiveIndicator.style.display = "none";
-      if (tripBadge) tripBadge.style.display = "none";
-      if (broadcastStatusBanner) broadcastStatusBanner.style.display = "none";
-      updateAttendanceUI(todayAttendanceMarked);
-      showGpsError(`Real GPS location could not be sent to passengers. ${getRealtimeDatabaseErrorMessage(err)}`);
-      console.error("Realtime Database location write failed:", err);
-    } finally {
-      isLocationWritePending = false;
+    } catch (storageErr) {
+      console.error("Could not save GPS update for retry:", storageErr);
+      showGpsError("This device could not save the GPS update for retry. Check available device storage.");
     }
   }
 }
@@ -1305,6 +1386,14 @@ function loadDriverAssignment(user, profile) {
   // Cloud RTDB listener if available
   if (db && typeof db.ref === "function") {
     try {
+      db.ref(".info/connected").on("value", (snap) => {
+        if (snap.val() === true) {
+          flushQueuedLocation();
+        } else if (isDutyActive) {
+          showLocationWaitingForNetwork();
+        }
+      });
+
       if (assignedRoute) {
         db.ref(`routes/${assignedRoute}`).on("value", (snap) => {
           const val = snap.val();
@@ -1333,45 +1422,42 @@ function loadDriverAssignment(user, profile) {
   // Listen to shift duty history
   loadShiftDutyHistory();
   claimDriverSession(user)
-    .then(() => restoreActiveDuty(user))
+    .then(async () => {
+      if (await checkTodayAttendance()) {
+        await restoreActiveDuty(user);
+      }
+    })
     .catch(async (sessionErr) => {
       console.error("Could not verify the active driver login session:", sessionErr);
-      showGpsError(sessionErr.message || "Could not verify this driver's device session.");
-      if (sessionErr.code === "driver-session-active") {
-        try {
-          await auth.signOut();
-        } catch (signOutErr) {
-          console.warn("Could not end duplicate driver login:", signOutErr.message);
-        }
-        window.location.replace("driver-login.html");
-      }
+      showGpsError(
+        sessionErr.message ||
+          "Could not verify this driver's device session. You remain signed in; GPS sharing may be limited until the session is available."
+      );
     });
 }
 
 async function restoreActiveDuty(user) {
-  if (isDutyRestoreStarted) return;
-  const driverUid = user && user.uid;
-  if (!driverUid) return;
+  if (isDutyRestoreStarted || isDutyActive) return;
 
-  const savedDuty = readActiveDuties()[driverUid];
+  const driverUid = user && user.uid;
+  const savedDuty = driverUid && readActiveDuties()[driverUid];
   if (!savedDuty || !savedDuty.busNo) return;
-  isDutyRestoreStarted = true;
 
   if (savedDuty.busNo !== assignedBus) {
     console.warn("Saved duty belongs to a different bus assignment; not restoring it.");
     return;
   }
-
   if (auth && auth.currentUser && auth.currentUser.uid !== driverUid) {
     console.warn("Saved duty belongs to a different authenticated driver; not restoring it.");
     return;
   }
 
+  isDutyRestoreStarted = true;
   try {
     await beginDuty({ restore: true });
-    if (!isDutyActive) isDutyRestoreStarted = false;
   } catch (restoreErr) {
-    console.error("Could not restore active duty after page reload:", restoreErr);
+    console.error("Could not restore active duty after page refresh:", restoreErr);
+  } finally {
     isDutyRestoreStarted = false;
   }
 }
@@ -1595,10 +1681,10 @@ if (modalCancelShareBtn) modalCancelShareBtn.addEventListener("click", closeLoca
 if (modalCloseXBtn) modalCloseXBtn.addEventListener("click", closeLocationShareModal);
 
 if (markAttendanceBtn) {
-  markAttendanceBtn.addEventListener("click", () => markAttendanceForToday(true));
+  markAttendanceBtn.addEventListener("click", () => markAttendanceForToday());
 }
 if (quickMarkBtn) {
-  quickMarkBtn.addEventListener("click", () => markAttendanceForToday(true));
+  quickMarkBtn.addEventListener("click", () => markAttendanceForToday());
 }
 if (dashStartTripBtn) {
   dashStartTripBtn.addEventListener("click", () => {
@@ -1680,6 +1766,8 @@ if (logoutBtn) {
     logout("driver-login.html");
   });
 }
+
+window.addEventListener("online", () => flushQueuedLocation());
 
 window.addEventListener("beforeunload", () => {
   if (isDutyActive && geoWatchId !== null && navigator.geolocation) {
