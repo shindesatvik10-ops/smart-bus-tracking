@@ -12,6 +12,7 @@ let assignedRoute = null;
 let assignedRouteDoc = null;
 
 let isDutyActive = false;
+let isDutyRestoreStarted = false;
 let todayAttendanceMarked = false;
 let hasLiveGpsFix = false;
 let geoWatchId = null;
@@ -32,6 +33,34 @@ let lastSentTickerInterval = null;
 let isLocationWritePending = false;
 
 const DEFAULT_CENTER = [16.7050, 74.2433];
+const ACTIVE_DUTY_STORAGE_KEY = "smartbus_active_duties";
+
+function readActiveDuties() {
+  try {
+    return JSON.parse(localStorage.getItem(ACTIVE_DUTY_STORAGE_KEY) || "{}");
+  } catch (error) {
+    console.warn("Could not read saved duty state:", error.message);
+    return {};
+  }
+}
+
+function saveActiveDuty(driverUid, busNo) {
+  const activeDuties = readActiveDuties();
+  activeDuties[driverUid] = {
+    busNo,
+    startedAt:
+      activeDuties[driverUid] && activeDuties[driverUid].busNo === busNo
+        ? activeDuties[driverUid].startedAt
+        : Date.now(),
+  };
+  localStorage.setItem(ACTIVE_DUTY_STORAGE_KEY, JSON.stringify(activeDuties));
+}
+
+function clearSavedActiveDuty(driverUid) {
+  const activeDuties = readActiveDuties();
+  delete activeDuties[driverUid];
+  localStorage.setItem(ACTIVE_DUTY_STORAGE_KEY, JSON.stringify(activeDuties));
+}
 
 // ================= DEFAULT KOLHAPUR SEEDS =================
 const DEFAULT_KOLHAPUR_ROUTES = {
@@ -87,8 +116,6 @@ const DEFAULT_KOLHAPUR_DRIVERS = {
     phone: "9876543210",
     email: "sunil.driver@smartbus.com",
     address: "Rajarampuri, Kolhapur",
-    password: "password123",
-    tempPassword: "password123",
     role: "driver",
     assignedBus: "MH-09-V-1204",
     assignedRoute: "route-1",
@@ -779,8 +806,15 @@ async function markAttendanceForToday(showPopup = true) {
 // ================================
 // GPS DUTY STATE MACHINE & REAL-TIME BROADCAST
 // ================================
-async function beginDuty() {
+async function beginDuty({ restore = false } = {}) {
   if (isDutyActive) return;
+
+  const activeUid = (currentUser && currentUser.uid) || sessionStorage.getItem("driverUid") || "driver_sunil";
+  const authenticatedUid = auth && auth.currentUser && auth.currentUser.uid;
+  if (!authenticatedUid || authenticatedUid !== activeUid) {
+    showGpsError("A Firebase-authenticated driver account is required to share live location across devices. Sign out and sign in with the driver account created by the Admin.");
+    return;
+  }
 
   if (!assignedBus) {
     alert("No bus assigned to your account. Please contact the Transport Administrator to assign a bus.");
@@ -822,10 +856,9 @@ async function beginDuty() {
 
   isDutyActive = true;
   hasLiveGpsFix = false;
-  const activeUid = (currentUser && currentUser.uid) || sessionStorage.getItem("driverUid") || "driver_sunil";
 
   // 1. Automatically mark attendance for today if not already marked
-  if (!todayAttendanceMarked) {
+  if (!restore && !todayAttendanceMarked) {
     try {
       await markAttendanceForToday(false);
     } catch (attErr) {
@@ -834,7 +867,9 @@ async function beginDuty() {
   }
   updateAttendanceUI(todayAttendanceMarked);
 
-  const nowStr = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  const savedDuty = readActiveDuties()[activeUid];
+  const shiftStartedAt = restore && savedDuty && savedDuty.startedAt ? savedDuty.startedAt : Date.now();
+  const nowStr = new Date(shiftStartedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
   if (dutyShiftStart) dutyShiftStart.textContent = nowStr;
 
   // 2. Request Screen Wake Lock
@@ -856,6 +891,7 @@ async function beginDuty() {
     if (typeof startSharing === "function") {
       await startSharing(assignedBus, null, activeUid);
     }
+    saveActiveDuty(activeUid, assignedBus);
   } catch (shareErr) {
     showGpsError(getRealtimeDatabaseErrorMessage(shareErr));
     isDutyActive = false;
@@ -915,6 +951,12 @@ async function endDuty() {
 
   isDutyActive = false;
   hasLiveGpsFix = false;
+  const activeUid = (currentUser && currentUser.uid) || sessionStorage.getItem("driverUid") || "driver_sunil";
+  try {
+    clearSavedActiveDuty(activeUid);
+  } catch (storageErr) {
+    console.warn("Could not clear saved duty state:", storageErr.message);
+  }
   updateAttendanceUI(todayAttendanceMarked);
 
   // 2. Stop geolocation watch
@@ -1292,6 +1334,48 @@ function loadDriverAssignment(user, profile) {
 
   // Listen to shift duty history
   loadShiftDutyHistory();
+  claimDriverSession(user)
+    .then(() => restoreActiveDuty(user))
+    .catch(async (sessionErr) => {
+      console.error("Could not verify the active driver login session:", sessionErr);
+      showGpsError(sessionErr.message || "Could not verify this driver's device session.");
+      if (sessionErr.code === "driver-session-active") {
+        try {
+          await auth.signOut();
+        } catch (signOutErr) {
+          console.warn("Could not end duplicate driver login:", signOutErr.message);
+        }
+        window.location.replace("driver-login.html");
+      }
+    });
+}
+
+async function restoreActiveDuty(user) {
+  if (isDutyRestoreStarted) return;
+  const driverUid = user && user.uid;
+  if (!driverUid) return;
+
+  const savedDuty = readActiveDuties()[driverUid];
+  if (!savedDuty || !savedDuty.busNo) return;
+  isDutyRestoreStarted = true;
+
+  if (savedDuty.busNo !== assignedBus) {
+    console.warn("Saved duty belongs to a different bus assignment; not restoring it.");
+    return;
+  }
+
+  if (auth && auth.currentUser && auth.currentUser.uid !== driverUid) {
+    console.warn("Saved duty belongs to a different authenticated driver; not restoring it.");
+    return;
+  }
+
+  try {
+    await beginDuty({ restore: true });
+    if (!isDutyActive) isDutyRestoreStarted = false;
+  } catch (restoreErr) {
+    console.error("Could not restore active duty after page reload:", restoreErr);
+    isDutyRestoreStarted = false;
+  }
 }
 
 function updateDutyLabels() {
@@ -1600,10 +1684,8 @@ if (logoutBtn) {
 }
 
 window.addEventListener("beforeunload", () => {
-  if (isDutyActive) {
-    if (geoWatchId !== null && navigator.geolocation) {
-      navigator.geolocation.clearWatch(geoWatchId);
-    }
+  if (isDutyActive && geoWatchId !== null && navigator.geolocation) {
+    navigator.geolocation.clearWatch(geoWatchId);
   }
 });
 

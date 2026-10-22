@@ -5,6 +5,7 @@ backend/node_modules/
 # Environment Variables & Secrets
 .env
 backend/.env
+frontend/firebase-config.local.js
 serviceAccountKey.json
 backend/serviceAccountKey.json
 

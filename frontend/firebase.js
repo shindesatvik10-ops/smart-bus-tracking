@@ -2,26 +2,7 @@
 // FIREBASE REALTIME DATABASE & AUTH CONFIGURATION
 // ============================================
 
-var firebaseConfig = window.firebaseConfig || {
-  apiKey: "AIzaSyAN12u2jI3QN3OWz3-Qwsrk3cEAGjmsK-s",
-  authDomain: "smart-bus-tracking-65f19.firebaseapp.com",
-  databaseURL: "https://smart-bus-tracking-65f19-default-rtdb.firebaseio.com",
-  projectId: "smart-bus-tracking-65f19",
-  storageBucket: "smart-bus-tracking-65f19.firebasestorage.app",
-  messagingSenderId: "547781095003",
-  appId: "1:547781095003:web:acd322be2bcdf8069d997e",
-};
-
-// var firebaseConfig = {
-//   apiKey: "AIzaSyDuLImxeS5WCsDLRfm7oN1AkhH4Jwj7C90",
-//   authDomain: "smart-bus-tracker-13d71.firebaseapp.com",
-//   databaseURL: "https://smart-bus-tracker-13d71-default-rtdb.asia-southeast1.firebasedatabase.app",
-//   projectId: "smart-bus-tracker-13d71",
-//   storageBucket: "smart-bus-tracker-13d71.firebasestorage.app",
-//   messagingSenderId: "198325481932",
-//   appId: "1:198325481932:web:171eb6c3ec4b29d02c2d69",
-//   measurementId: "G-ER0SWV2EBM"
-// };
+var firebaseConfig = window.firebaseConfig || null;
 
 window.firebaseConfig = firebaseConfig;
 
@@ -31,7 +12,7 @@ var app = window.app || null;
 var auth = window.auth || null;
 var db = window.rtdb || null;
 
-if (typeof firebase !== "undefined") {
+if (firebaseConfig && typeof firebase !== "undefined") {
   try {
     app = firebase.apps.length === 0 ? firebase.initializeApp(firebaseConfig) : firebase.app();
     auth = firebase.auth();
@@ -58,6 +39,96 @@ const serverTimestamp = () =>
   typeof firebase !== "undefined" && firebase.database && firebase.database.ServerValue
     ? firebase.database.ServerValue.TIMESTAMP
     : Date.now();
+
+const DRIVER_SESSION_LEASE_MS = 45000;
+const DRIVER_SESSION_HEARTBEAT_MS = 15000;
+let driverSessionHeartbeat = null;
+let driverSessionHeartbeatInFlight = false;
+
+function getDriverSessionId() {
+  let sessionId = sessionStorage.getItem("smartbus_driver_session_id");
+  if (!sessionId) {
+    sessionId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    sessionStorage.setItem("smartbus_driver_session_id", sessionId);
+  }
+  return sessionId;
+}
+
+async function claimDriverSession(user) {
+  if (!user || !user.uid || !auth || !auth.currentUser || auth.currentUser.uid !== user.uid) {
+    throw new Error("Firebase driver authentication is required to claim this login session.");
+  }
+  if (!db || typeof db.ref !== "function") {
+    throw new Error("Firebase Realtime Database is required to enforce one-device driver login.");
+  }
+
+  const sessionId = getDriverSessionId();
+  const sessionRef = db.ref(`driverSessions/${user.uid}`);
+  const now = getServerNow();
+  const result = await sessionRef.transaction((currentSession) => {
+    if (
+      currentSession &&
+      currentSession.sessionId !== sessionId &&
+      Number(currentSession.expiresAt) > now
+    ) {
+      return;
+    }
+    return { sessionId, expiresAt: now + DRIVER_SESSION_LEASE_MS };
+  });
+
+  if (!result.committed || !result.snapshot.val() || result.snapshot.val().sessionId !== sessionId) {
+    const error = new Error("This driver account is already signed in on another device.");
+    error.code = "driver-session-active";
+    throw error;
+  }
+
+  if (driverSessionHeartbeat) clearInterval(driverSessionHeartbeat);
+  driverSessionHeartbeat = setInterval(async () => {
+    if (driverSessionHeartbeatInFlight) return;
+    driverSessionHeartbeatInFlight = true;
+    try {
+      const heartbeatNow = getServerNow();
+      const heartbeatResult = await sessionRef.transaction((currentSession) => {
+        if (!currentSession || currentSession.sessionId !== sessionId) return;
+        return { sessionId, expiresAt: heartbeatNow + DRIVER_SESSION_LEASE_MS };
+      });
+
+      if (!heartbeatResult.committed) {
+        clearInterval(driverSessionHeartbeat);
+        driverSessionHeartbeat = null;
+        console.error("Driver login session was replaced by another device.");
+        if (auth && auth.signOut) await auth.signOut();
+        window.location.replace("driver-login.html");
+      }
+    } catch (error) {
+      console.error("Could not renew driver login session:", error);
+    } finally {
+      driverSessionHeartbeatInFlight = false;
+    }
+  }, DRIVER_SESSION_HEARTBEAT_MS);
+
+  return { sessionId };
+}
+
+async function releaseDriverSession() {
+  if (driverSessionHeartbeat) {
+    clearInterval(driverSessionHeartbeat);
+    driverSessionHeartbeat = null;
+  }
+
+  const user = auth && auth.currentUser;
+  const sessionId = sessionStorage.getItem("smartbus_driver_session_id");
+  if (user && user.uid && sessionId && db && typeof db.ref === "function") {
+    await db.ref(`driverSessions/${user.uid}`).transaction((currentSession) => {
+      if (currentSession && currentSession.sessionId === sessionId) return null;
+      return;
+    });
+  }
+  sessionStorage.removeItem("smartbus_driver_session_id");
+}
 
 // Database wrapper functions
 const ref = (database, path) => (database && database.ref ? database.ref(path) : (db ? db.ref(path) : null));
@@ -460,6 +531,12 @@ function requireRole(expectedRole, onSuccess, redirectUrl = null) {
 
 // User logout
 async function logout(redirectUrl = null) {
+  try {
+    await releaseDriverSession();
+  } catch (error) {
+    console.warn("Could not release driver login session:", error.message);
+  }
+
   sessionStorage.removeItem("adminLoggedIn");
   sessionStorage.removeItem("adminRole");
   sessionStorage.removeItem("adminName");
@@ -503,6 +580,8 @@ window.markAttendance = markAttendance;
 window.switchBus = switchBus;
 window.getServerNow = getServerNow;
 window.serverTimestamp = serverTimestamp;
+window.claimDriverSession = claimDriverSession;
+window.releaseDriverSession = releaseDriverSession;
 window.initializeApp = initializeApp;
 window.getAuth = getAuth;
 window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;

@@ -67,8 +67,6 @@ const DEFAULT_KOLHAPUR_DRIVERS = {
     phone: "9876543210",
     email: "sunil.driver@smartbus.com",
     address: "Rajarampuri, Kolhapur",
-    password: "password123",
-    tempPassword: "password123",
     role: "driver",
     assignedBus: "MH-09-V-1204",
     assignedRoute: "route-1",

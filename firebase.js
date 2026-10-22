@@ -2,22 +2,13 @@
 // FIREBASE REALTIME DATABASE & AUTH CONFIGURATION
 // ============================================
 
-const firebaseConfig = {
-  apiKey: "AIzaSyAN12u2jI3QN3OWz3-Qwsrk3cEAGjmsK-s",
-  authDomain: "smart-bus-tracking-65f19.firebaseapp.com",
-  databaseURL: "https://smart-bus-tracking-65f19-default-rtdb.firebaseio.com",
-  projectId: "smart-bus-tracking-65f19",
-  storageBucket: "smart-bus-tracking-65f19.firebasestorage.app",
-  messagingSenderId: "547781095003",
-  appId: "1:547781095003:web:acd322be2bcdf8069d997e",
-};
-//https://smart-bus-tracking-65f19-default-rtdb.firebaseio.com
+const firebaseConfig = window.firebaseConfig || null;
 // Initialize Firebase
 let app = null;
 let auth = null;
 let db = null;
 
-if (typeof firebase !== "undefined") {
+if (firebaseConfig && typeof firebase !== "undefined") {
   app = firebase.apps.length === 0 ? firebase.initializeApp(firebaseConfig) : firebase.app();
   auth = firebase.auth();
   db = firebase.database();

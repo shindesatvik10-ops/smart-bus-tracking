@@ -80,8 +80,6 @@ const DEFAULT_KOLHAPUR_DRIVERS = {
     phone: "9876543210",
     email: "sunil.driver@smartbus.com",
     address: "Rajarampuri, Kolhapur",
-    password: "password123",
-    tempPassword: "password123",
     role: "driver",
     assignedBus: "MH-09-V-1204",
     assignedRoute: "route-1",
@@ -349,15 +347,29 @@ loginForm.addEventListener("submit", async function (event) {
   loginMessage.textContent = "Signing in...";
   loginMessage.style.color = "#2563eb";
 
+  if (!auth || typeof auth.signInWithEmailAndPassword !== "function") {
+    loginMessage.textContent = "Driver sign-in is unavailable because Firebase Authentication is not connected.";
+    loginMessage.style.color = "red";
+    return;
+  }
+
   // 1. Resolve Driver by Name, Email, Phone or UID
   const driver = await findDriverByIdentifier(identifier);
+  let authenticationError = null;
 
-  // If driver was found in records:
-  if (driver) {
-    // Check if password matches admin-updated / temp password
-    const driverPassword = driver.password || driver.tempPassword;
-    if (driverPassword && driverPassword === password) {
-      saveDriverSession(driver);
+  // Every driver must have a Firebase Auth session for protected live-location writes.
+  if (driver && driver.email) {
+    try {
+      const userCredential = await auth.signInWithEmailAndPassword(driver.email, password);
+      const user = userCredential.user;
+      await claimDriverSession(user);
+
+      saveDriverSession({
+        ...driver,
+        uid: user.uid,
+        name: driver.name || user.displayName || "Driver",
+        email: driver.email || user.email,
+      });
 
       loginMessage.textContent = "Login successful! Redirecting...";
       loginMessage.style.color = "green";
@@ -365,30 +377,9 @@ loginForm.addEventListener("submit", async function (event) {
         window.location.href = "driver-dashboard.html";
       }, 500);
       return;
-    }
-
-    // Also attempt Firebase Auth with driver's registered email
-    if (driver.email) {
-      try {
-        const userCredential = await auth.signInWithEmailAndPassword(driver.email, password);
-        const user = userCredential.user;
-
-        saveDriverSession({
-          ...driver,
-          uid: user.uid,
-          name: driver.name || user.displayName || "Driver",
-          email: driver.email || user.email,
-        });
-
-        loginMessage.textContent = "Login successful! Redirecting...";
-        loginMessage.style.color = "green";
-        setTimeout(() => {
-          window.location.href = "driver-dashboard.html";
-        }, 500);
-        return;
-      } catch (authErr) {
-        console.warn("Firebase Auth with driver email failed:", authErr.message);
-      }
+    } catch (authErr) {
+      authenticationError = authErr;
+      console.warn("Firebase Auth with driver email failed:", authErr.message);
     }
   }
 
@@ -397,6 +388,7 @@ loginForm.addEventListener("submit", async function (event) {
     try {
       const userCredential = await auth.signInWithEmailAndPassword(identifier, password);
       const user = userCredential.user;
+      await claimDriverSession(user);
 
       let driverName = user.displayName || "Driver";
       let assignedBus = "";
@@ -442,33 +434,31 @@ loginForm.addEventListener("submit", async function (event) {
       }, 500);
       return;
     } catch (authDirectErr) {
+      authenticationError = authDirectErr;
       console.warn("Direct Firebase Auth failed:", authDirectErr.message);
     }
   }
 
-  // 3. Fallback: Check if password was correct but name differed slightly in local storage
-  try {
-    const localDrivers = JSON.parse(localStorage.getItem("smartbus_drivers") || "{}");
-    const matched = Object.values(localDrivers).find((d) => {
-      const matchName = d.name && d.name.toLowerCase().includes(identifier.toLowerCase());
-      const matchEmail = d.email && d.email.toLowerCase() === identifier.toLowerCase();
-      const matchPass = d.password === password || d.tempPassword === password;
-      return (matchName || matchEmail) && matchPass;
-    });
-
-    if (matched) {
-      saveDriverSession(matched);
-
-      loginMessage.textContent = "Login successful! Redirecting...";
-      loginMessage.style.color = "green";
-      setTimeout(() => {
-        window.location.href = "driver-dashboard.html";
-      }, 500);
-      return;
+  if (authenticationError && authenticationError.code === "driver-session-active") {
+    try {
+      await auth.signOut();
+    } catch (signOutError) {
+      console.warn("Could not end duplicate driver login:", signOutError.message);
     }
-  } catch (e) {}
-
-  // 4. Invalid credentials message
-  loginMessage.textContent = "Invalid Driver Name/Email or Password. Please check your credentials or contact Admin.";
+    loginMessage.textContent = "This driver account is already signed in on another device. Sign out there first, then try again.";
+  } else if (
+    authenticationError &&
+    (authenticationError.code === "PERMISSION_DENIED" ||
+      authenticationError.code === "NETWORK_ERROR" ||
+      /Realtime Database is required|permission_denied|network/i.test(authenticationError.message || ""))
+  ) {
+    loginMessage.textContent = "Could not verify the one-device login. Check the Firebase Realtime Database connection and deploy the driverSessions rules.";
+  } else if (driver && driver.email && authenticationError && authenticationError.code === "auth/user-not-found") {
+    loginMessage.textContent = "This driver account is not registered in Firebase Authentication. Ask the Admin to create the driver account before sharing location.";
+  } else if (driver && !driver.email) {
+    loginMessage.textContent = "This driver profile has no email address for Firebase sign-in. Ask the Admin to update the profile.";
+  } else {
+    loginMessage.textContent = "Invalid Driver Name/Email or Password. Please check your Firebase driver credentials or contact Admin.";
+  }
   loginMessage.style.color = "red";
 });

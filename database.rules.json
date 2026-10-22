@@ -26,6 +26,12 @@
       ".read": true,
       ".write": true
     },
+    "driverSessions": {
+      "$driverUid": {
+        ".read": "auth != null && auth.uid === $driverUid",
+        ".write": "auth != null && auth.uid === $driverUid"
+      }
+    },
     "alerts": {
       ".read": true,
       ".write": true

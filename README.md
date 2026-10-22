@@ -18,6 +18,8 @@ A real-time public transit tracking and fleet management system built with **van
 * **Real GPS Broadcast**: Uses `navigator.geolocation.watchPosition` with high accuracy filtering ($<100\text{ m}$ threshold, automatic speed/heading calculation).
 * **Screen Wake Lock API**: Keeps driver phone screens awake during active duty.
 * **Duty Shift & Attendance**: One-click "Start Duty" records driver attendance and starts live GPS broadcasting. "End Duty" cleanly signs off and marks the bus offline.
+* **Duty Recovery**: An active duty is restored after a dashboard refresh, and GPS sharing resumes automatically. Use "End Duty" to stop sharing and clear the saved duty.
+* **Single-Device Driver Login**: A driver account can have one active device session. Sessions renew while active and expire after 45 seconds without a heartbeat; deploy the `driverSessions` rules from `database.rules.json` to Firebase Realtime Database.
 * **SOS Distress Alert**: Instant emergency broadcast to the Transport Admin.
 
 ### 3. 🛡️ Admin Dashboard (`admin-dashboard.html`)
@@ -48,7 +50,7 @@ A real-time public transit tracking and fleet management system built with **van
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/smart-bus-tracking.git
+   git clone https://github.com/shindesatvik10-ops/smart-bus-tracking.git
    cd smart-bus-tracking
    ```
 
@@ -65,13 +67,21 @@ A real-time public transit tracking and fleet management system built with **van
 
 4. **Open in your browser:**
    * **Passenger Live Map:** `http://localhost:5000/`
-   * **Admin Login:** `http://localhost:5000/admin-login.html`
-   * **Driver Login:** `http://localhost:5000/driver-login.html` 
+   * **Admin Login:** `http://localhost:5000/admin-login.html` (Use an Admin account registered in Firebase Authentication.)
+   * **Driver Login:** `http://localhost:5000/driver-login.html` (Use a driver account created by the Admin and registered in Firebase Authentication.)
+
+### Firebase Configuration
+
+1. Copy `frontend/firebase-config.example.js` to `frontend/firebase-config.local.js`.
+2. Replace the example values with your Firebase project's web app settings.
+3. Create Admin and driver accounts in Firebase Authentication and assign their roles in the database.
+
+The local config file is ignored by Git and must not be committed.
 
 ---
 
 ## 🔒 Security & Firebase Setup
 
-* Place your `serviceAccountKey.json` inside `backend/` if connecting to Firebase Admin SDK.
+* Place your `serviceAccountKey.json` inside `backend/` if connecting to Firebase Admin SDK. This file is ignored by Git and must not be committed.
 * Realtime Database security rules are available in `database.rules.json`.
 * Firestore security rules are available in `firestore.rules`.

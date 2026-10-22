@@ -15,24 +15,9 @@ document.addEventListener("DOMContentLoaded", function () {
         loginMessage.textContent = "Signing in...";
         loginMessage.style.color = "#2563eb";
 
-        // Admin authentication with username 'Admin' and password '123'
-        if ((email.toLowerCase() === "admin" || email.toLowerCase() === "admin@smartbus.com") && password === "123") {
-            sessionStorage.setItem("adminLoggedIn", "true");
-            sessionStorage.setItem("adminRole", "admin");
-            sessionStorage.setItem("adminName", "Admin");
-            sessionStorage.setItem("adminUid", "admin-root-uid");
-
-            // Also attempt background Firebase auth if available
-            if (typeof auth !== "undefined") {
-                auth.signInWithEmailAndPassword("admin@smartbus.com", "admin123").catch(() => {});
-            }
-
-            loginMessage.textContent = "Login successful! Redirecting...";
-            loginMessage.style.color = "green";
-
-            setTimeout(function () {
-                window.location.href = "./admin-dashboard.html";
-            }, 400);
+        if (typeof auth === "undefined" || !auth || typeof auth.signInWithEmailAndPassword !== "function") {
+            loginMessage.textContent = "Admin sign-in is unavailable because Firebase Authentication is not configured.";
+            loginMessage.style.color = "red";
             return;
         }
 
@@ -78,11 +63,11 @@ document.addEventListener("DOMContentLoaded", function () {
                 })
                 .catch((error) => {
                     console.log("Login error:", error.message);
-                    loginMessage.textContent = "Invalid Admin ID or Password. Use Admin / 123";
+                    loginMessage.textContent = "Invalid Admin email or password.";
                     loginMessage.style.color = "red";
                 });
         } else {
-            loginMessage.textContent = "Invalid Admin ID or Password. Use Admin / 123";
+            loginMessage.textContent = "Invalid Admin email or password.";
             loginMessage.style.color = "red";
         }
 
