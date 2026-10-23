@@ -14,7 +14,11 @@ let assignedRouteDoc = null;
 let isDutyActive = false;
 let isDutyRestoreStarted = false;
 let todayAttendanceMarked = false;
+let attendanceMarkInProgress = false;
 let hasLiveGpsFix = false;
+let driverNotificationsListenerAttached = false;
+let driverTargetedNotifications = {};
+let driverBroadcastNotifications = {};
 let geoWatchId = null;
 let wakeLock = null;
 
@@ -339,7 +343,6 @@ const sidebar = document.getElementById("sidebar");
 const menuButton = document.getElementById("menuButton");
 const sidebarOverlay = document.getElementById("sidebarOverlay");
 const logoutBtn = document.getElementById("logoutBtn");
-const sosBtn = document.getElementById("sosBtn");
 const navItems = document.querySelectorAll(".nav-item");
 const sections = document.querySelectorAll(".dashboard-section");
 const pageTitle = document.getElementById("pageTitle");
@@ -817,7 +820,7 @@ function updateAttendanceUI(isMarked, record = null) {
         markBtn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Present · Start GPS Sharing';
         markBtn.style.background = "";
       }
-      markBtn.disabled = false;
+      markBtn.disabled = attendanceMarkInProgress;
     }
     if (qMarkBtn) {
       if (hasLiveGpsFix) {
@@ -830,7 +833,7 @@ function updateAttendanceUI(isMarked, record = null) {
         qMarkBtn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Present · Start GPS Sharing';
         qMarkBtn.style.background = "";
       }
-      qMarkBtn.disabled = false;
+      qMarkBtn.disabled = attendanceMarkInProgress;
     }
     if (dashStartBtn && !isDutyActive) {
       dashStartBtn.style.display = "inline-flex";
@@ -852,12 +855,12 @@ function updateAttendanceUI(isMarked, record = null) {
     }
     if (markBtn) {
       markBtn.innerHTML = '<i class="fa-solid fa-clipboard-check"></i> Mark Attendance';
-      markBtn.disabled = false;
+      markBtn.disabled = attendanceMarkInProgress;
       markBtn.style.background = "";
     }
     if (qMarkBtn) {
       qMarkBtn.innerHTML = '<i class="fa-solid fa-clipboard-check"></i> Mark Attendance';
-      qMarkBtn.disabled = false;
+      qMarkBtn.disabled = attendanceMarkInProgress;
       qMarkBtn.style.background = "";
     }
     if (dashStartBtn) dashStartBtn.style.display = "none";
@@ -870,53 +873,49 @@ function updateAttendanceUI(isMarked, record = null) {
 
 async function markAttendanceForToday() {
   const uid = (currentUser && currentUser.uid) || sessionStorage.getItem("driverUid") || "driver_sunil";
+  if (attendanceMarkInProgress) return;
   if (todayAttendanceMarked) {
     if (!isDutyActive) await beginDuty();
     return;
   }
 
+  attendanceMarkInProgress = true;
+  if (markAttendanceBtn) markAttendanceBtn.disabled = true;
+  if (quickMarkBtn) quickMarkBtn.disabled = true;
+
   const driverName = (currentProfile && currentProfile.name) || sessionStorage.getItem("driverName") || "Driver";
-  const today = new Date().toISOString().split("T")[0];
-  const now = Date.now();
-  const timeStr = new Date(now).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-
-  const attRecord = {
-    driverUid: uid,
-    driverName: driverName,
-    busNo: assignedBus || "Not assigned",
-    routeId: assignedRoute || "Not assigned",
-    date: today,
-    markedAt: now,
-    status: "Present",
-    shiftLogId: `${uid}_${now}`,
-  };
-
-  // 1. Save to localStorage immediately
   try {
-    const localAtt = JSON.parse(localStorage.getItem("smartbus_attendance") || "{}");
-    localAtt[`${uid}_${today}`] = attRecord;
-    localStorage.setItem("smartbus_attendance", JSON.stringify(localAtt));
-    window.dispatchEvent(new Event("storage"));
-  } catch (e) {}
-
-  // 2. Sync to Firebase RTDB
-  try {
-    if (typeof markAttendance === "function") {
-      await markAttendance(uid, assignedBus, assignedRoute);
+    if (await checkTodayAttendance()) {
+      if (!isDutyActive) await beginDuty();
+      return;
     }
-  } catch (e) {
-    console.warn("RTDB mark attendance notice:", e.message);
-  }
 
-  // 3. Update UI
-  updateAttendanceUI(true, attRecord);
-  loadShiftDutyHistory();
+    if (typeof markAttendance !== "function") {
+      throw new Error("Attendance service is unavailable. Please refresh and try again.");
+    }
 
-  // Attendance is an explicit driver action; start GPS immediately after it is saved.
-  if (!isDutyActive) {
-    await beginDuty();
-  } else {
-    alert(`✓ Attendance Marked!\n\nDriver: ${driverName}\nStatus: PRESENT\n(Live GPS Location Sharing is already active)`);
+    const result = await markAttendance(uid, assignedBus, assignedRoute);
+    const record = result.record || {
+      driverUid: uid,
+      driverName,
+      busNo: assignedBus || "Not assigned",
+      routeId: assignedRoute || "Not assigned",
+      date: result.date || new Date().toISOString().split("T")[0],
+      markedAt: Date.now(),
+      status: "Present",
+      shiftLogId: result.shiftLogId,
+    };
+    if (!record.driverName) record.driverName = driverName;
+    updateAttendanceUI(true, record);
+    loadShiftDutyHistory();
+
+    if (!isDutyActive) await beginDuty();
+  } catch (error) {
+    console.error("Could not mark driver attendance:", error);
+    showGpsError(error.message || "Could not mark attendance. Please check your connection and try again.");
+  } finally {
+    attendanceMarkInProgress = false;
+    updateAttendanceUI(todayAttendanceMarked);
   }
 }
 
@@ -1355,6 +1354,53 @@ function syncDriverAssignment() {
   checkTodayAttendance();
 }
 
+function renderDriverNotifications(notificationsData, driverUid) {
+  const list = document.getElementById("driverNotifList");
+  if (!list) return;
+
+  const messages = Object.entries(notificationsData || {})
+    .map(([id, notification]) => ({ id, ...notification }))
+    .filter((notification) =>
+      notification &&
+      notification.message &&
+      (notification.recipientUid === "all" || notification.recipientUid === driverUid)
+    )
+    .sort((left, right) => Number(right.sentAt || 0) - Number(left.sentAt || 0))
+    .slice(0, 50);
+
+  list.replaceChildren();
+  if (!messages.length) {
+    const emptyState = document.createElement("p");
+    emptyState.style.opacity = "0.6";
+    emptyState.textContent = "No announcements yet.";
+    list.appendChild(emptyState);
+    return;
+  }
+
+  messages.forEach((message) => {
+    const card = document.createElement("article");
+    card.style.cssText = "padding:12px 14px; margin-bottom:10px; border:1px solid #e2e8f0; border-left:4px solid #2563eb; border-radius:8px; background:#fff;";
+
+    const header = document.createElement("div");
+    header.style.cssText = "display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;";
+    const sender = document.createElement("strong");
+    sender.textContent = message.senderName || "Transport Admin";
+    const sentAt = document.createElement("span");
+    sentAt.style.cssText = "color:#64748b; font-size:12px;";
+    const timestamp = Number(message.sentAt);
+    sentAt.textContent = Number.isFinite(timestamp) && timestamp > 0
+      ? new Date(timestamp).toLocaleString("en-IN")
+      : "Time unavailable";
+    header.append(sender, sentAt);
+
+    const body = document.createElement("p");
+    body.style.cssText = "margin-top:8px; white-space:pre-wrap; overflow-wrap:anywhere;";
+    body.textContent = message.message;
+    card.append(header, body);
+    list.appendChild(card);
+  });
+}
+
 function loadDriverAssignment(user, profile) {
   currentUser = user;
   currentProfile = profile;
@@ -1386,6 +1432,40 @@ function loadDriverAssignment(user, profile) {
   // Cloud RTDB listener if available
   if (db && typeof db.ref === "function") {
     try {
+      if (!driverNotificationsListenerAttached) {
+        db.ref(`driverNotifications/${user.uid}`).limitToLast(50).on(
+          "value",
+          (snap) => {
+            driverTargetedNotifications = snap.val() || {};
+            renderDriverNotifications({
+              ...driverBroadcastNotifications,
+              ...driverTargetedNotifications,
+            }, user.uid);
+          },
+          (error) => {
+            console.error("Could not load admin messages:", error);
+            const list = document.getElementById("driverNotifList");
+            if (list) list.textContent = "Could not load admin messages. Please refresh later.";
+          }
+        );
+        db.ref("broadcastNotifications").limitToLast(50).on(
+          "value",
+          (snap) => {
+            driverBroadcastNotifications = snap.val() || {};
+            renderDriverNotifications({
+              ...driverBroadcastNotifications,
+              ...driverTargetedNotifications,
+            }, user.uid);
+          },
+          (error) => {
+            console.error("Could not load broadcast messages:", error);
+            const list = document.getElementById("driverNotifList");
+            if (list) list.textContent = "Could not load admin messages. Please refresh later.";
+          }
+        );
+        driverNotificationsListenerAttached = true;
+      }
+
       db.ref(".info/connected").on("value", (snap) => {
         if (snap.val() === true) {
           flushQueuedLocation();
@@ -1585,6 +1665,7 @@ function loadShiftDutyHistory() {
 
     renderAttendanceHistoryTable(myAtt);
   } catch (e) {}
+  updateDriverAttendanceMonthSummary();
 
   // 2. Listen to Cloud RTDB if connected
   if (db && typeof db.ref === "function") {
@@ -1605,6 +1686,13 @@ function loadShiftDutyHistory() {
         .equalTo(uid)
         .on("value", (snap) => {
           const val = snap.val() || {};
+          let localAtt = {};
+          try {
+            localAtt = JSON.parse(localStorage.getItem("smartbus_attendance") || "{}");
+          } catch (error) {
+            console.warn("Could not merge local attendance records:", error.message);
+          }
+          updateDriverAttendanceMonthSummary({ ...localAtt, ...val });
           const atts = Object.values(val)
             .sort((a, b) => (b.date || "").localeCompare(a.date || "") || Number(b.markedAt || 0) - Number(a.markedAt || 0))
             .slice(0, 15);
@@ -1666,6 +1754,197 @@ function renderAttendanceHistoryTable(atts) {
     .join("");
 }
 
+function getSelectedAttendanceMonth() {
+  const monthInput = document.getElementById("driverAttendanceReportMonth");
+  if (!monthInput) return new Date().toISOString().slice(0, 7);
+  if (!monthInput.value) monthInput.value = new Date().toISOString().slice(0, 7);
+  return monthInput.value;
+}
+
+function getDriverAttendanceReportRecords(month, attendanceData, uid) {
+  return Object.entries(attendanceData)
+    .filter(([recordId, record]) => {
+      if (!record) return false;
+      const belongsToDriver = record.driverUid === uid || record.uid === uid || recordId.startsWith(`${uid}_`);
+      const recordDate = String(record.date || recordId.match(/\d{4}-\d{2}-\d{2}/)?.[0] || "");
+      return belongsToDriver && recordDate.startsWith(`${month}-`);
+    })
+    .map(([recordId, record]) => ({
+      date: String(record.date || recordId.match(/\d{4}-\d{2}-\d{2}/)?.[0] || ""),
+      markedAt: record.markedAt || record.timestamp || null,
+      busNo: record.busNo || record.assignedBus || assignedBus || "—",
+      routeId: record.routeId || assignedRoute || "—",
+      status: record.status || "Present",
+    }))
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function updateDriverAttendanceMonthSummary(attendanceDataOverride = null) {
+  const summary = document.getElementById("driverAttendanceMonthSummary");
+  if (!summary) return;
+
+  const month = getSelectedAttendanceMonth();
+  const uid = (currentUser && currentUser.uid) || sessionStorage.getItem("driverUid") || "driver_sunil";
+  try {
+    const attendanceData = attendanceDataOverride || JSON.parse(localStorage.getItem("smartbus_attendance") || "{}");
+    const records = getDriverAttendanceReportRecords(month, attendanceData, uid);
+    summary.textContent = `${records.length} attendance day${records.length === 1 ? "" : "s"} recorded`;
+  } catch (error) {
+    console.warn("Could not calculate monthly attendance summary:", error.message);
+    summary.textContent = "Attendance summary unavailable";
+  }
+}
+
+function formatDriverAttendanceReportTime(value) {
+  if (value == null || value === "") return "—";
+  const timestamp = typeof value === "object" && value.seconds
+    ? value.seconds * 1000
+    : value;
+  const parsed = typeof timestamp === "number" ? new Date(timestamp) : new Date(String(timestamp));
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return parsed.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+}
+
+async function downloadDriverMonthlyAttendancePdf() {
+  const PdfConstructor = window.jspdf && window.jspdf.jsPDF;
+  if (!PdfConstructor) {
+    alert("PDF support could not be loaded. Check your internet connection and reload the dashboard.");
+    return;
+  }
+
+  const uid = (currentUser && currentUser.uid) || sessionStorage.getItem("driverUid") || "driver_sunil";
+  const month = getSelectedAttendanceMonth();
+  let attendanceData = {};
+
+  try {
+    attendanceData = JSON.parse(localStorage.getItem("smartbus_attendance") || "{}");
+  } catch (error) {
+    console.warn("Could not read local attendance for the monthly report:", error.message);
+  }
+
+  let cloudUnavailable = false;
+  if (db && typeof db.ref === "function") {
+    try {
+      const snapshot = await db.ref("attendance").orderByChild("driverUid").equalTo(uid).once("value");
+      attendanceData = { ...attendanceData, ...(snapshot.val() || {}) };
+    } catch (error) {
+      cloudUnavailable = true;
+      console.warn("Could not load full cloud attendance for monthly report:", error.message);
+    }
+  } else {
+    cloudUnavailable = true;
+  }
+
+  const records = getDriverAttendanceReportRecords(month, attendanceData, uid);
+  const driverName = (currentProfile && currentProfile.name) || sessionStorage.getItem("driverName") || "Driver";
+  const PdfConstructorInstance = new PdfConstructor({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pageWidth = PdfConstructorInstance.internal.pageSize.getWidth();
+  const pageHeight = PdfConstructorInstance.internal.pageSize.getHeight();
+  const left = 14;
+  let y = 48;
+
+  PdfConstructorInstance.setFont("helvetica", "bold");
+  PdfConstructorInstance.setFontSize(18);
+  PdfConstructorInstance.setTextColor(30, 41, 59);
+  PdfConstructorInstance.text("Monthly Attendance Report", left, 18);
+  PdfConstructorInstance.setFont("helvetica", "normal");
+  PdfConstructorInstance.setFontSize(10);
+  PdfConstructorInstance.text(`Driver: ${driverName}`, left, 27);
+  PdfConstructorInstance.text(`Driver ID: ${uid}`, left, 34);
+  PdfConstructorInstance.text(`Month: ${month}`, left, 41);
+
+  const columns = [
+    { label: "Date", width: 42 },
+    { label: "Marked At", width: 35 },
+    { label: "Bus", width: 48 },
+    { label: "Route", width: 42 },
+    { label: "Status", width: 25 },
+  ];
+  const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
+  const tableLeft = Math.max(left, (pageWidth - tableWidth) / 2);
+  const drawHeader = () => {
+    PdfConstructorInstance.setFillColor(37, 99, 235);
+    PdfConstructorInstance.rect(tableLeft, y, tableWidth, 9, "F");
+    PdfConstructorInstance.setFont("helvetica", "bold");
+    PdfConstructorInstance.setFontSize(8);
+    PdfConstructorInstance.setTextColor(255, 255, 255);
+    let x = tableLeft + 2;
+    columns.forEach((column) => {
+      PdfConstructorInstance.text(column.label, x, y + 6);
+      x += column.width;
+    });
+    y += 9;
+  };
+
+  drawHeader();
+  PdfConstructorInstance.setFont("helvetica", "normal");
+  PdfConstructorInstance.setFontSize(8);
+  PdfConstructorInstance.setTextColor(30, 41, 59);
+
+  const reportRows = records.length
+    ? records
+    : [{ date: "—", markedAt: null, busNo: "—", routeId: "—", status: "No attendance records" }];
+  reportRows.forEach((record, index) => {
+    const values = [
+      record.date,
+      formatDriverAttendanceReportTime(record.markedAt),
+      record.busNo,
+      record.routeId,
+      record.status,
+    ];
+    const lines = values.map((value, columnIndex) =>
+      PdfConstructorInstance.splitTextToSize(String(value), columns[columnIndex].width - 4)
+    );
+    const rowHeight = Math.max(8, Math.max(...lines.map((cell) => cell.length)) * 4 + 3);
+
+    if (y + rowHeight > pageHeight - 14) {
+      PdfConstructorInstance.addPage();
+      y = 14;
+      drawHeader();
+      PdfConstructorInstance.setFont("helvetica", "normal");
+      PdfConstructorInstance.setFontSize(8);
+      PdfConstructorInstance.setTextColor(30, 41, 59);
+    }
+    if (index % 2 === 0) {
+      PdfConstructorInstance.setFillColor(241, 245, 249);
+      PdfConstructorInstance.rect(tableLeft, y, tableWidth, rowHeight, "F");
+    }
+
+    let x = tableLeft + 2;
+    lines.forEach((cell, columnIndex) => {
+      PdfConstructorInstance.text(cell, x, y + 4);
+      x += columns[columnIndex].width;
+    });
+    PdfConstructorInstance.setDrawColor(226, 232, 240);
+    PdfConstructorInstance.line(tableLeft, y + rowHeight, tableLeft + tableWidth, y + rowHeight);
+    y += rowHeight;
+  });
+
+  PdfConstructorInstance.setFontSize(9);
+  PdfConstructorInstance.text(`Total attendance days: ${records.length}`, left, Math.min(y + 8, pageHeight - 6));
+  PdfConstructorInstance.save(`attendance-${uid}-${month}.pdf`);
+  updateDriverAttendanceMonthSummary();
+  if (cloudUnavailable) {
+    alert("The PDF was created from attendance saved on this device. Cloud records could not be loaded, so this report may be incomplete.");
+  }
+}
+
+const driverAttendanceReportMonth = document.getElementById("driverAttendanceReportMonth");
+if (driverAttendanceReportMonth) {
+  driverAttendanceReportMonth.value = new Date().toISOString().slice(0, 7);
+  driverAttendanceReportMonth.addEventListener("change", updateDriverAttendanceMonthSummary);
+}
+
+const downloadDriverAttendancePdfBtn = document.getElementById("downloadDriverAttendancePdfBtn");
+if (downloadDriverAttendancePdfBtn) {
+  downloadDriverAttendancePdfBtn.addEventListener("click", () => {
+    downloadDriverMonthlyAttendancePdf().catch((error) => {
+      console.error("Could not create monthly attendance PDF:", error);
+      alert("Could not create the monthly attendance report. Please try again.");
+    });
+  });
+}
+
 // ================================
 // EVENT LISTENERS
 // ================================
@@ -1713,45 +1992,216 @@ if (settingsLogoutBtn) {
   });
 }
 
-// SOS Alert
-if (sosBtn) {
-  sosBtn.addEventListener("click", () => {
-    if (!confirm("Send an EMERGENCY distress alert to Transport Admin right now?")) return;
-    const activeUid = (currentUser && currentUser.uid) || sessionStorage.getItem("driverUid") || "driver_sunil";
-    const driverName = (currentProfile && currentProfile.name) || sessionStorage.getItem("driverName") || "Driver";
+// Driver-to-admin messages
+let voiceMessageRecorder = null;
+let voiceMessageChunks = [];
+let voiceMessageBlob = null;
+let voiceMessageStream = null;
+let voiceMessageTimeout = null;
+let voiceMessageObjectUrl = null;
 
-    const alertPayload = {
-      type: "driver_sos",
-      driverUid: activeUid,
-      driverName: driverName,
-      busNumber: assignedBus || "Unknown",
-      location: lastPosLat && lastPosLng ? { lat: lastPosLat, lng: lastPosLng } : null,
-      status: "active",
-      ts: Date.now(),
-    };
+const startVoiceMessageBtn = document.getElementById("startVoiceMessageBtn");
+const stopVoiceMessageBtn = document.getElementById("stopVoiceMessageBtn");
+const voiceMessageStatus = document.getElementById("voiceMessageStatus");
+const voiceMessagePreview = document.getElementById("voiceMessagePreview");
+const sendDriverAdminMessageBtn = document.getElementById("sendDriverAdminMessageBtn");
+const MAX_VOICE_MESSAGE_BYTES = 5 * 1024 * 1024;
+const MAX_VOICE_MESSAGE_DURATION_MS = 60 * 1000;
 
-    try {
-      const localAlerts = JSON.parse(localStorage.getItem("smartbus_alerts") || "[]");
-      localAlerts.unshift(alertPayload);
-      localStorage.setItem("smartbus_alerts", JSON.stringify(localAlerts));
-      window.dispatchEvent(new Event("storage"));
-    } catch (e) {}
+function setVoiceMessageStatus(message, isError = false) {
+  if (!voiceMessageStatus) return;
+  voiceMessageStatus.textContent = message;
+  voiceMessageStatus.style.color = isError ? "#b91c1c" : "#64748b";
+}
 
-    if (db && typeof db.ref === "function") {
-      db.ref("alerts").push({
-        ...alertPayload,
-        ts: typeof firebase !== "undefined" && firebase.database ? firebase.database.ServerValue.TIMESTAMP : Date.now(),
-      });
+function stopVoiceMessageRecording() {
+  if (voiceMessageTimeout) {
+    clearTimeout(voiceMessageTimeout);
+    voiceMessageTimeout = null;
+  }
+  if (voiceMessageRecorder && voiceMessageRecorder.state === "recording") {
+    voiceMessageRecorder.stop();
+  }
+}
+
+if (startVoiceMessageBtn) {
+  startVoiceMessageBtn.addEventListener("click", async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === "undefined") {
+      setVoiceMessageStatus("Voice recording is not supported by this browser.", true);
+      return;
     }
 
-    sosBtn.textContent = "Alert Sent";
-    sosBtn.disabled = true;
-    sosBtn.style.background = "#7f1d1d";
-    setTimeout(() => {
-      sosBtn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> SOS';
-      sosBtn.disabled = false;
-      sosBtn.style.background = "#ef4444";
-    }, 15000);
+    try {
+      voiceMessageStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((type) =>
+        MediaRecorder.isTypeSupported(type)
+      );
+      voiceMessageRecorder = mimeType
+        ? new MediaRecorder(voiceMessageStream, { mimeType })
+        : new MediaRecorder(voiceMessageStream);
+      voiceMessageChunks = [];
+      voiceMessageBlob = null;
+      if (voiceMessageObjectUrl) URL.revokeObjectURL(voiceMessageObjectUrl);
+      voiceMessageObjectUrl = null;
+      if (voiceMessagePreview) {
+        voiceMessagePreview.removeAttribute("src");
+        voiceMessagePreview.style.display = "none";
+      }
+
+      voiceMessageRecorder.addEventListener("dataavailable", (event) => {
+        if (event.data && event.data.size > 0) voiceMessageChunks.push(event.data);
+      });
+      voiceMessageRecorder.addEventListener("stop", () => {
+        if (voiceMessageTimeout) {
+          clearTimeout(voiceMessageTimeout);
+          voiceMessageTimeout = null;
+        }
+        if (voiceMessageStream) {
+          voiceMessageStream.getTracks().forEach((track) => track.stop());
+          voiceMessageStream = null;
+        }
+        startVoiceMessageBtn.disabled = false;
+        stopVoiceMessageBtn.disabled = true;
+        stopVoiceMessageBtn.style.background = "#e2e8f0";
+        stopVoiceMessageBtn.style.color = "#475569";
+        stopVoiceMessageBtn.style.cursor = "not-allowed";
+        voiceMessageBlob = new Blob(voiceMessageChunks, {
+          type: voiceMessageRecorder.mimeType || "audio/webm",
+        });
+        if (voiceMessageBlob.size > MAX_VOICE_MESSAGE_BYTES) {
+          voiceMessageBlob = null;
+          setVoiceMessageStatus("Recording exceeds the 5 MB limit. Record a shorter message.", true);
+          return;
+        }
+        voiceMessageObjectUrl = URL.createObjectURL(voiceMessageBlob);
+        if (voiceMessagePreview) {
+          voiceMessagePreview.src = voiceMessageObjectUrl;
+          voiceMessagePreview.style.display = "block";
+        }
+        setVoiceMessageStatus("Voice message ready to send.");
+      });
+
+      voiceMessageRecorder.start();
+      startVoiceMessageBtn.disabled = true;
+      stopVoiceMessageBtn.disabled = false;
+      stopVoiceMessageBtn.style.background = "#fee2e2";
+      stopVoiceMessageBtn.style.color = "#b91c1c";
+      stopVoiceMessageBtn.style.cursor = "pointer";
+      setVoiceMessageStatus("Recording... Maximum 60 seconds.");
+      voiceMessageTimeout = setTimeout(stopVoiceMessageRecording, MAX_VOICE_MESSAGE_DURATION_MS);
+    } catch (error) {
+      console.error("Could not start voice recording:", error);
+      if (voiceMessageStream) {
+        voiceMessageStream.getTracks().forEach((track) => track.stop());
+        voiceMessageStream = null;
+      }
+      setVoiceMessageStatus("Microphone permission was denied or the microphone is unavailable.", true);
+    }
+  });
+}
+
+if (stopVoiceMessageBtn) {
+  stopVoiceMessageBtn.addEventListener("click", () => {
+    stopVoiceMessageRecording();
+    stopVoiceMessageBtn.disabled = true;
+    stopVoiceMessageBtn.style.background = "#e2e8f0";
+    stopVoiceMessageBtn.style.color = "#475569";
+    stopVoiceMessageBtn.style.cursor = "not-allowed";
+  });
+}
+
+if (sendDriverAdminMessageBtn) {
+  sendDriverAdminMessageBtn.addEventListener("click", async () => {
+    const messageInput = document.getElementById("driverAdminMessage");
+    const message = messageInput ? messageInput.value.trim() : "";
+    if (!message && !voiceMessageBlob) {
+      setVoiceMessageStatus("Enter a message or record a voice message first.", true);
+      return;
+    }
+    if (message.length > 1000) {
+      setVoiceMessageStatus("Text messages must be 1,000 characters or fewer.", true);
+      return;
+    }
+    if (!navigator.onLine) {
+      setVoiceMessageStatus("Internet connection is required to send messages to the admin.", true);
+      return;
+    }
+    if (!db || typeof db.ref !== "function") {
+      setVoiceMessageStatus("Message service is unavailable. Please try again later.", true);
+      return;
+    }
+
+    const driverUid = (currentUser && currentUser.uid) || sessionStorage.getItem("driverUid");
+    if (!driverUid) {
+      setVoiceMessageStatus("Could not verify your driver account. Please sign in again.", true);
+      return;
+    }
+
+    sendDriverAdminMessageBtn.disabled = true;
+    let uploadedStorageRef = null;
+    let alertSaved = false;
+    try {
+      let voiceUrl = null;
+      let voicePath = null;
+      let voiceMimeType = null;
+      if (voiceMessageBlob) {
+        if (!storage || typeof storage.ref !== "function") {
+          throw new Error("Voice message storage is unavailable. You can still send a text message.");
+        }
+        const extension = voiceMessageBlob.type.includes("mp4") ? "mp4" : "webm";
+        voicePath = `driver-alerts/${driverUid}/${Date.now()}.${extension}`;
+        uploadedStorageRef = storage.ref(voicePath);
+        const upload = await uploadedStorageRef.put(voiceMessageBlob, {
+          contentType: voiceMessageBlob.type || "audio/webm",
+        });
+        voiceUrl = await upload.ref.getDownloadURL();
+        voiceMimeType = voiceMessageBlob.type;
+      }
+
+      const driverName = (currentProfile && currentProfile.name) || sessionStorage.getItem("driverName") || "Driver";
+      const alertPayload = {
+        type: "driver_message",
+        uid: driverUid,
+        driverUid,
+        driverName,
+        busNumber: assignedBus || "Unknown",
+        message,
+        voiceUrl,
+        voicePath,
+        voiceMimeType,
+        location: lastPosLat != null && lastPosLng != null ? { lat: lastPosLat, lng: lastPosLng } : null,
+        status: "new",
+        ts: typeof serverTimestamp === "function" ? serverTimestamp() : Date.now(),
+      };
+      await db.ref("alerts").push(alertPayload);
+      alertSaved = true;
+
+      if (messageInput) messageInput.value = "";
+      voiceMessageBlob = null;
+      voiceMessageChunks = [];
+      if (voiceMessagePreview) {
+        voiceMessagePreview.pause();
+        voiceMessagePreview.removeAttribute("src");
+        voiceMessagePreview.style.display = "none";
+      }
+      if (voiceMessageObjectUrl) {
+        URL.revokeObjectURL(voiceMessageObjectUrl);
+        voiceMessageObjectUrl = null;
+      }
+      setVoiceMessageStatus("Message sent to the Transport Admin.");
+    } catch (error) {
+      console.error("Could not send driver message:", error);
+      if (uploadedStorageRef && !alertSaved) {
+        try {
+          await uploadedStorageRef.delete();
+        } catch (cleanupError) {
+          console.warn("Could not remove unlinked voice recording:", cleanupError.message);
+        }
+      }
+      setVoiceMessageStatus(error.message || "Could not send the message. Please try again.", true);
+    } finally {
+      sendDriverAdminMessageBtn.disabled = false;
+    }
   });
 }
 
@@ -1770,6 +2220,14 @@ if (logoutBtn) {
 window.addEventListener("online", () => flushQueuedLocation());
 
 window.addEventListener("beforeunload", () => {
+  if (voiceMessageTimeout) clearTimeout(voiceMessageTimeout);
+  if (voiceMessageRecorder && voiceMessageRecorder.state === "recording") {
+    voiceMessageRecorder.stop();
+  }
+  if (voiceMessageStream) {
+    voiceMessageStream.getTracks().forEach((track) => track.stop());
+  }
+  if (voiceMessageObjectUrl) URL.revokeObjectURL(voiceMessageObjectUrl);
   if (isDutyActive && geoWatchId !== null && navigator.geolocation) {
     navigator.geolocation.clearWatch(geoWatchId);
   }

@@ -35,6 +35,20 @@
     "alerts": {
       ".read": true,
       ".write": true
+    },
+    "driverNotifications": {
+      "$driverUid": {
+        ".read": "auth != null && (auth.uid === $driverUid || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "broadcastNotifications": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'driver' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+    },
+    "adminSentNotifications": {
+      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
     }
   }
 }

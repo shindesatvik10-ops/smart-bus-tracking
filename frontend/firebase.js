@@ -11,12 +11,14 @@ window.firebaseConfig = firebaseConfig;
 var app = window.app || null;
 var auth = window.auth || null;
 var db = window.rtdb || null;
+var storage = window.firebaseStorage || null;
 
 if (firebaseConfig && typeof firebase !== "undefined") {
   try {
     app = firebase.apps.length === 0 ? firebase.initializeApp(firebaseConfig) : firebase.app();
     auth = firebase.auth();
     db = firebase.database();
+    storage = typeof firebase.storage === "function" ? firebase.storage() : storage;
   } catch (initErr) {
     console.warn("Firebase init notice:", initErr.message);
   }
@@ -309,15 +311,29 @@ const markAttendance = async (driverUid, busNo, routeId) => {
   if (!driverUid) throw new Error("Driver UID required for attendance.");
 
   const today = new Date().toISOString().split("T")[0];
-  const shiftLogId = `${driverUid}_${Date.now()}`;
+  const attendanceKey = `${driverUid}_${today}`;
+  let localAtt = {};
+  try {
+    localAtt = JSON.parse(localStorage.getItem("smartbus_attendance") || "{}");
+  } catch (error) {
+    console.warn("Could not read local attendance cache:", error.message);
+  }
+  const localRecord = localAtt[attendanceKey];
+  if (localRecord) {
+    return { marked: false, record: localRecord, shiftLogId: localRecord.shiftLogId || null, date: today };
+  }
+
+  const shiftLogId = `${driverUid}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   const attData = {
     driverUid,
     busNo: busNo || null,
     routeId: routeId || null,
     date: today,
+    driverName: sessionStorage.getItem("driverName") || "Driver",
     markedAt: serverTimestamp(),
     shiftLogId,
+    status: "Present",
   };
 
   const shiftData = {
@@ -330,30 +346,44 @@ const markAttendance = async (driverUid, busNo, routeId) => {
     status: "active",
   };
 
+  let savedRecord = {
+    ...attData,
+    driverName: sessionStorage.getItem("driverName") || "Driver",
+    markedAt: Date.now(),
+  };
+
   if (db) {
+    const attendanceRef = db.ref(`attendance/${attendanceKey}`);
+    const result = await attendanceRef.transaction((currentRecord) => {
+      if (currentRecord != null) return;
+      return attData;
+    });
+
+    if (!result.committed) {
+      savedRecord = result.snapshot.val() || savedRecord;
+      const updatedLocalAtt = JSON.parse(localStorage.getItem("smartbus_attendance") || "{}");
+      updatedLocalAtt[attendanceKey] = savedRecord;
+      localStorage.setItem("smartbus_attendance", JSON.stringify(updatedLocalAtt));
+      return {
+        marked: false,
+        record: savedRecord,
+        shiftLogId: savedRecord.shiftLogId || null,
+        date: today,
+      };
+    }
+
+    savedRecord = result.snapshot.val() || savedRecord;
     try {
-      const updates = {};
-      updates[`attendance/${driverUid}_${today}`] = attData;
-      updates[`shiftLogs/${shiftLogId}`] = shiftData;
-      await db.ref().update(updates);
-    } catch (e) {
-      console.warn("markAttendance RTDB notice:", e.message);
+      await db.ref(`shiftLogs/${shiftLogId}`).set(shiftData);
+    } catch (error) {
+      console.error("Attendance was marked, but its shift log could not be saved:", error);
     }
   }
 
   try {
-    const localAtt = JSON.parse(localStorage.getItem("smartbus_attendance") || "{}");
-    localAtt[`${driverUid}_${today}`] = {
-      driverUid,
-      driverName: sessionStorage.getItem("driverName") || "Driver",
-      busNo: busNo || null,
-      routeId: routeId || null,
-      date: today,
-      markedAt: Date.now(),
-      status: "Present",
-      shiftLogId,
-    };
-    localStorage.setItem("smartbus_attendance", JSON.stringify(localAtt));
+    const updatedLocalAtt = JSON.parse(localStorage.getItem("smartbus_attendance") || "{}");
+    updatedLocalAtt[attendanceKey] = savedRecord;
+    localStorage.setItem("smartbus_attendance", JSON.stringify(updatedLocalAtt));
 
     const localShifts = JSON.parse(localStorage.getItem("smartbus_shiftLogs") || "{}");
     localShifts[shiftLogId] = {
@@ -367,9 +397,11 @@ const markAttendance = async (driverUid, busNo, routeId) => {
     };
     localStorage.setItem("smartbus_shiftLogs", JSON.stringify(localShifts));
     window.dispatchEvent(new Event("storage"));
-  } catch (e) {}
+  } catch (error) {
+    console.warn("Could not cache attendance locally:", error.message);
+  }
 
-  return { shiftLogId, date: today };
+  return { marked: true, record: savedRecord, shiftLogId, date: today };
 };
 
 // Switch bus option (allowed only if driver is assigned to another bus by admin)
@@ -569,6 +601,7 @@ window.app = app;
 window.auth = auth;
 window.db = db;
 window.rtdb = db;
+window.firebaseStorage = storage;
 window.ref = ref;
 window.get = get;
 window.set = set;

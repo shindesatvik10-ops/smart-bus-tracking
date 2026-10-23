@@ -68,11 +68,13 @@
 
 
             <a href="#" class="nav-item" data-section="attendance">
-
                 <i class="fa-solid fa-clipboard-check"></i>
-
                 <span>Attendance</span>
+            </a>
 
+            <a href="#" class="nav-item" data-section="contactAdmin">
+                <i class="fa-solid fa-message"></i>
+                <span>Contact Admin</span>
             </a>
 
 
@@ -157,11 +159,6 @@
 
 
             <div class="topbar-right">
-
-                <button id="sosBtn" style="background:#ef4444; color:#fff; border:none; padding:8px 16px; border-radius:20px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:6px;">
-                    <i class="fa-solid fa-triangle-exclamation"></i>
-                    SOS
-                </button>
 
                 <button class="icon-button">
 
@@ -650,13 +647,37 @@
             </div>
 
 
+            <div class="dashboard-card" style="margin-bottom:18px;">
+
+                <div class="card-header">
+
+                    <div>
+                        <h3>Monthly Attendance Report</h3>
+                        <p>Choose a month to download your attendance report as a PDF.</p>
+                    </div>
+
+                </div>
+
+                <div style="display:flex; align-items:flex-end; flex-wrap:wrap; gap:12px; margin:14px 0;">
+                    <label for="driverAttendanceReportMonth" style="display:grid; gap:5px; color:#475569; font-size:12px; font-weight:600;">
+                        Report month
+                        <input id="driverAttendanceReportMonth" type="month" style="padding:9px 11px; border:1px solid #cbd5e1; border-radius:7px; color:#1e293b;">
+                    </label>
+                    <button type="button" id="downloadDriverAttendancePdfBtn" style="padding:10px 14px; border:0; border-radius:7px; background:#2563eb; color:#fff; font-weight:700; cursor:pointer;">
+                        <i class="fa-solid fa-file-pdf"></i> Download Monthly PDF
+                    </button>
+                    <span id="driverAttendanceMonthSummary" style="color:#475569; font-size:13px;"></span>
+                </div>
+
+            </div>
+
             <div class="dashboard-card recent-trips">
 
                 <div class="card-header">
 
                     <div>
                         <h3>Attendance History</h3>
-                        <p>Your last few duty logs</p>
+                        <p>Your recent attendance records</p>
                     </div>
 
                 </div>
@@ -760,6 +781,35 @@
 
 
         <!-- ================= SETTINGS ================= -->
+
+        <section class="dashboard-section" id="contactAdmin">
+            <div class="section-page-header">
+                <div>
+                    <h2>Contact Admin</h2>
+                    <p>Send a text message or a short voice message to the Transport Admin.</p>
+                </div>
+            </div>
+
+            <div class="dashboard-card" style="max-width:760px; padding:22px;">
+                <label for="driverAdminMessage" style="display:block; margin-bottom:7px; color:#475569; font-size:13px; font-weight:700;">Message</label>
+                <textarea id="driverAdminMessage" maxlength="1000" rows="5" placeholder="Type your message for the admin..." style="width:100%; resize:vertical; padding:11px 12px; border:1px solid #cbd5e1; border-radius:8px; font:inherit;"></textarea>
+                <div style="display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:14px;">
+                    <button type="button" id="startVoiceMessageBtn" style="padding:10px 14px; border:0; border-radius:7px; background:#eff6ff; color:#1d4ed8; font-weight:700; cursor:pointer;">
+                        <i class="fa-solid fa-microphone"></i> Record Voice
+                    </button>
+                    <button type="button" id="stopVoiceMessageBtn" disabled style="padding:10px 14px; border:0; border-radius:7px; background:#e2e8f0; color:#475569; font-weight:700; cursor:not-allowed;">
+                        <i class="fa-solid fa-stop"></i> Stop Recording
+                    </button>
+                    <span id="voiceMessageStatus" role="status" style="color:#64748b; font-size:13px;"></span>
+                    <audio id="voiceMessagePreview" controls style="display:none; max-width:100%;"></audio>
+                    <button type="button" id="sendDriverAdminMessageBtn" style="margin-left:auto; padding:10px 16px; border:0; border-radius:7px; background:#2563eb; color:#fff; font-weight:700; cursor:pointer;">
+                        <i class="fa-solid fa-paper-plane"></i> Send to Admin
+                    </button>
+                </div>
+                <p style="margin-top:12px; color:#64748b; font-size:12px;">Voice messages are limited to 60 seconds. Include your current situation and location in the message when helpful.</p>
+            </div>
+        </section>
+
 
         <section class="dashboard-section" id="settings">
 
@@ -901,6 +951,8 @@
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
     <script src="firebase-config.local.js"></script>
     <script src="firebase-config.js"></script>
     <script src="firebase.js"></script>

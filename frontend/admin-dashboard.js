@@ -145,6 +145,7 @@ let allBuses = {};
 let allDrivers = {};
 let allRoutes = {};
 let allLocations = {};
+let allAttendance = {};
 let activeListeners = [];
 
 // Load persisted data on startup (with Kolhapur default seed fallback)
@@ -236,11 +237,19 @@ try {
   console.warn("Storage init notice:", e.message);
 }
 
+try {
+  allAttendance = JSON.parse(localStorage.getItem("smartbus_attendance") || "{}");
+} catch (error) {
+  console.warn("Attendance cache init notice:", error.message);
+}
+
 // Initial render from local cache
 renderBusesTable();
 renderDriversTable();
 renderRoutesTable();
 updateOverviewStats();
+renderAttendanceReport();
+renderNotificationRecipientOptions();
 
 // ========================================================
 // 3. AUTH GUARD & SESSION CHECK
@@ -313,6 +322,473 @@ function showUIMessage(message, isError = false) {
   }, 6000);
 }
 
+function renderDriverAlerts(alertsData) {
+  const list = document.getElementById("driverAlertsList");
+  if (!list) return;
+
+  const alerts = Object.entries(alertsData || {})
+    .map(([id, alert]) => ({ id, ...alert }))
+    .filter((alert) => alert.type === "driver_message")
+    .sort((left, right) => Number(right.ts || 0) - Number(left.ts || 0))
+    .slice(0, 30);
+
+  if (!alerts.length) {
+    list.innerHTML = '<p style="opacity:0.6;">No messages from drivers.</p>';
+    return;
+  }
+
+  list.innerHTML = alerts.map((alert) => {
+    const timestamp = Number(alert.ts);
+    const sentAt = Number.isFinite(timestamp) && timestamp > 0
+      ? new Date(timestamp).toLocaleString("en-IN")
+      : "Time unavailable";
+    const voiceUrl = typeof alert.voiceUrl === "string" && /^https:\/\/[^\s"'<>]+$/i.test(alert.voiceUrl)
+      ? alert.voiceUrl
+      : "";
+    const hasCoordinates =
+      alert.location &&
+      Number.isFinite(Number(alert.location.lat)) &&
+      Number.isFinite(Number(alert.location.lng));
+    const mapLink = hasCoordinates
+      ? `https://www.google.com/maps?q=${encodeURIComponent(`${Number(alert.location.lat)},${Number(alert.location.lng)}`)}`
+      : "";
+
+    return `
+      <article style="padding:12px 14px; margin-bottom:10px; border:1px solid #e2e8f0; border-left:4px solid #2563eb; border-radius:8px; background:#fff;">
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+          <strong>Driver message · ${escapeReportHtml(alert.driverName || alert.driverUid || "Driver")}</strong>
+          <span style="color:#64748b; font-size:12px;">${escapeReportHtml(sentAt)}</span>
+        </div>
+        <div style="margin-top:4px; color:#475569; font-size:12px;">Bus: ${escapeReportHtml(alert.busNumber || "Unknown")}</div>
+        ${alert.message ? `<p style="margin-top:8px; white-space:pre-wrap; overflow-wrap:anywhere;">${escapeReportHtml(alert.message)}</p>` : ""}
+        ${voiceUrl ? `<audio controls preload="none" src="${escapeReportHtml(voiceUrl)}" style="display:block; width:min(100%, 420px); margin-top:9px;"></audio>` : ""}
+        ${mapLink ? `<a href="${mapLink}" target="_blank" rel="noopener noreferrer" style="display:inline-block; margin-top:8px; color:#1d4ed8; font-size:12px; font-weight:700;">View driver location</a>` : ""}
+      </article>
+    `;
+  }).join("");
+}
+
+function renderAdminNotifications(notificationsData) {
+  const list = document.getElementById("notificationsList");
+  if (!list) return;
+
+  const messages = Object.entries(notificationsData || {})
+    .map(([id, notification]) => ({ id, ...notification }))
+    .filter((notification) => notification && notification.message)
+    .sort((left, right) => Number(right.sentAt || 0) - Number(left.sentAt || 0))
+    .slice(0, 30);
+
+  if (!messages.length) {
+    list.innerHTML = '<p style="opacity:0.6;">No admin messages sent yet.</p>';
+    return;
+  }
+
+  list.innerHTML = messages.map((notification) => {
+    const sentAt = Number(notification.sentAt);
+    const dateText = sentAt > 0 ? new Date(sentAt).toLocaleString("en-IN") : "Time unavailable";
+    const recipientText = notification.recipientUid === "all"
+      ? "All drivers"
+      : notification.recipientName || allDrivers[notification.recipientUid]?.name || "Selected driver";
+
+    return `
+      <article style="padding:11px 13px; margin-bottom:8px; border:1px solid #e2e8f0; border-radius:8px;">
+        <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+          <strong>To: ${escapeReportHtml(recipientText)}</strong>
+          <span style="color:#64748b; font-size:12px;">${escapeReportHtml(dateText)}</span>
+        </div>
+        <p style="margin-top:6px; white-space:pre-wrap; overflow-wrap:anywhere;">${escapeReportHtml(notification.message)}</p>
+      </article>
+    `;
+  }).join("");
+}
+
+function renderNotificationRecipientOptions() {
+  const select = document.getElementById("notifRecipientSelect");
+  if (!select) return;
+
+  const selected = select.value || "all";
+  const driverOptions = Object.entries(allDrivers)
+    .filter(([, driver]) => driver && typeof driver === "object")
+    .sort(([, left], [, right]) => (left.name || left.displayName || "").localeCompare(right.name || right.displayName || ""))
+    .map(([uid, driver]) =>
+      `<option value="${escapeReportHtml(uid)}">${escapeReportHtml(driver.name || driver.displayName || uid)}</option>`
+    )
+    .join("");
+  select.innerHTML = `<option value="all">All drivers</option>${driverOptions}`;
+  if (selected === "all" || allDrivers[selected]) select.value = selected;
+}
+
+const sendNotifBtn = document.getElementById("sendNotifBtn");
+if (sendNotifBtn) {
+  sendNotifBtn.addEventListener("click", async () => {
+    const input = document.getElementById("notifMessageInput");
+    const recipientSelect = document.getElementById("notifRecipientSelect");
+    const status = document.getElementById("notificationSendStatus");
+    const message = input ? input.value.trim() : "";
+    const recipientUid = recipientSelect ? recipientSelect.value : "all";
+
+    if (!message) {
+      if (status) status.textContent = "Enter a message before sending.";
+      return;
+    }
+    if (message.length > 1000) {
+      if (status) status.textContent = "Messages must be 1,000 characters or fewer.";
+      return;
+    }
+    if (!db || typeof db.ref !== "function") {
+      if (status) status.textContent = "Message service is unavailable. Check the database connection.";
+      return;
+    }
+    if (recipientUid !== "all" && !allDrivers[recipientUid]) {
+      if (status) status.textContent = "Select a valid driver from the list.";
+      return;
+    }
+
+    sendNotifBtn.disabled = true;
+    if (status) status.textContent = "Sending message...";
+    try {
+      if (!auth || typeof auth.onAuthStateChanged !== "function") {
+        throw new Error("Firebase Authentication is unavailable. Check the Firebase configuration.");
+      }
+
+      const currentUser = auth.currentUser || await new Promise((resolve, reject) => {
+        let unsubscribe = () => {};
+        const timeout = setTimeout(() => {
+          unsubscribe();
+          reject(new Error("Firebase sign-in is still loading. Please try again."));
+        }, 10000);
+
+        unsubscribe = auth.onAuthStateChanged(
+          (user) => {
+            clearTimeout(timeout);
+            unsubscribe();
+            resolve(user);
+          },
+          (error) => {
+            clearTimeout(timeout);
+            unsubscribe();
+            reject(error);
+          }
+        );
+      });
+      if (!currentUser) {
+        throw new Error("Sign in to Firebase with an admin account before sending messages.");
+      }
+
+      const adminProfileSnapshot = await db.ref(`users/${currentUser.uid}`).once("value");
+      const adminProfile = adminProfileSnapshot.val();
+      if (!adminProfile || adminProfile.role !== "admin") {
+        throw new Error("This Firebase account is not marked as an admin in Realtime Database (users/{uid}/role).");
+      }
+
+      const profileName = document.querySelector(".profile-info strong");
+      const notification = {
+        message,
+        recipientUid,
+        recipientName: recipientUid === "all"
+          ? "All drivers"
+          : allDrivers[recipientUid].name || allDrivers[recipientUid].displayName || recipientUid,
+        senderUid: currentUser.uid,
+        senderName: currentUser.displayName || (profileName ? profileName.textContent.trim() : "Admin"),
+        sentAt: typeof serverTimestamp === "function" ? serverTimestamp() : Date.now(),
+      };
+      const deliveryPath = recipientUid === "all"
+        ? "broadcastNotifications"
+        : `driverNotifications/${recipientUid}`;
+      const deliveryRef = db.ref(deliveryPath).push();
+      if (!deliveryRef.key) throw new Error("Could not create a message ID.");
+      await deliveryRef.set(notification);
+
+      let historySaved = true;
+      try {
+        await db.ref(`adminSentNotifications/${deliveryRef.key}`).set(notification);
+      } catch (historyError) {
+        historySaved = false;
+        console.error("Message delivered, but admin message history could not be saved:", historyError);
+      }
+
+      if (input) input.value = "";
+      if (status) status.textContent = recipientUid === "all"
+        ? `Message sent to all drivers.${historySaved ? "" : " It was delivered, but could not be added to sent history."}`
+        : `Message sent to ${notification.recipientName}.${historySaved ? "" : " It was delivered, but could not be added to sent history."}`;
+    } catch (error) {
+      console.error("Could not send admin message:", error);
+      const errorMessage = String(error && error.message || "");
+      const permissionDenied = error && (
+        error.code === "PERMISSION_DENIED" ||
+        error.code === "permission_denied" ||
+        /permission_denied|permission denied/i.test(errorMessage)
+      );
+      if (status) {
+        status.textContent = permissionDenied
+          ? "Firebase denied the write. Deploy the latest database.rules.json and confirm this signed-in account has role \"admin\" at users/{uid}/role."
+          : errorMessage || "Could not send the message. Please try again.";
+      }
+    } finally {
+      sendNotifBtn.disabled = false;
+    }
+  });
+}
+
+function escapeReportHtml(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, (character) => {
+    const entities = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+    return entities[character];
+  });
+}
+
+function getAttendanceReportDate() {
+  const dateInput = document.getElementById("attendanceReportDate");
+  if (!dateInput) return new Date().toISOString().slice(0, 10);
+  if (!dateInput.value) dateInput.value = new Date().toISOString().slice(0, 10);
+  return dateInput.value;
+}
+
+function getAttendanceDate(record, recordId) {
+  if (record && record.date) return String(record.date);
+  const dateMatch = String(recordId || "").match(/\d{4}-\d{2}-\d{2}/);
+  return dateMatch ? dateMatch[0] : "";
+}
+
+function getSelectedAttendanceDriver() {
+  const driverSelect = document.getElementById("attendanceReportDriver");
+  return driverSelect ? driverSelect.value : "";
+}
+
+function formatAttendanceReportTime(value) {
+  if (value == null || value === "") return "—";
+  const parsed = typeof value === "number" ? new Date(value) : new Date(String(value));
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return parsed.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+}
+
+function getAttendanceReportRows() {
+  const reportDate = getAttendanceReportDate();
+  const recordsByDriver = {};
+
+  Object.entries(allAttendance).forEach(([recordId, record]) => {
+    if (!record || getAttendanceDate(record, recordId) !== reportDate) return;
+    const driverUid = record.driverUid || record.uid || String(recordId).replace(new RegExp(`_${reportDate}$`), "");
+    if (driverUid) recordsByDriver[driverUid] = record;
+  });
+
+  const rows = Object.entries(allDrivers).map(([uid, driver]) => {
+    const record = recordsByDriver[uid] || null;
+    const busNo =
+      (record && (record.busNo || record.assignedBus)) ||
+      (driver && driver.assignedBus) ||
+      Object.entries(allBuses).find(([, bus]) => bus && bus.assignedDriver === uid)?.[0] ||
+      "—";
+    const routeId = (record && record.routeId) || (driver && driver.assignedRoute) || allBuses[busNo]?.routeId;
+    const route = routeId && allRoutes[routeId];
+    const rawStatus = record ? String(record.status || "Present") : "Not Marked";
+
+    return {
+      uid,
+      driverName: (driver && (driver.name || driver.displayName)) || (record && record.driverName) || uid,
+      busNo,
+      routeName: route ? route.name || routeId : routeId || "—",
+      status: rawStatus,
+      markedAt: record ? formatAttendanceReportTime(record.markedAt || record.timestamp) : "—",
+      isMarked: Boolean(record),
+    };
+  }).sort((left, right) => left.driverName.localeCompare(right.driverName));
+
+  const selectedDriver = getSelectedAttendanceDriver();
+  return selectedDriver ? rows.filter((row) => row.uid === selectedDriver) : rows;
+}
+
+function renderAttendanceReport() {
+  const tbody = document.getElementById("reportAttendanceBody");
+  if (!tbody) return;
+
+  const driverSelect = document.getElementById("attendanceReportDriver");
+  if (driverSelect) {
+    const selectedDriver = driverSelect.value;
+    const options = Object.entries(allDrivers)
+      .sort(([, left], [, right]) => (left.name || left.displayName || "").localeCompare(right.name || right.displayName || ""))
+      .map(([uid, driver]) => `<option value="${escapeReportHtml(uid)}">${escapeReportHtml(driver.name || driver.displayName || uid)}</option>`)
+      .join("");
+    driverSelect.innerHTML = `<option value="">All drivers</option>${options}`;
+    if (allDrivers[selectedDriver]) driverSelect.value = selectedDriver;
+  }
+
+  const rows = getAttendanceReportRows();
+  const selectedDriver = getSelectedAttendanceDriver();
+  const markedCount = rows.filter((row) => row.isMarked).length;
+  const notMarked = rows.filter((row) => !row.isMarked);
+  const summary = document.getElementById("attendanceReportSummary");
+  const notMarkedText = document.getElementById("reportNotMarked");
+
+  if (summary) {
+    summary.textContent = selectedDriver
+      ? `${markedCount ? "Attendance marked" : "Not marked"} · ${rows[0] ? rows[0].driverName : "Driver"}`
+      : `${markedCount} marked · ${notMarked.length} not marked · ${rows.length} drivers`;
+  }
+  if (notMarkedText) {
+    notMarkedText.textContent = selectedDriver && rows[0]
+      ? `${rows[0].driverName}: ${rows[0].isMarked ? "attendance recorded" : "attendance not marked"} for this date.`
+      : notMarked.length
+      ? `Not marked: ${notMarked.map((row) => row.driverName).join(", ")}`
+      : "All listed drivers have marked attendance for this date.";
+  }
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; opacity:0.6; padding:20px;">No drivers found.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map((row) => `
+    <tr>
+      <td>${escapeReportHtml(row.driverName)}</td>
+      <td>${escapeReportHtml(row.busNo)}</td>
+      <td>${escapeReportHtml(row.routeName)}</td>
+      <td><span class="table-status ${row.isMarked ? "completed" : ""}">${escapeReportHtml(row.status)}</span></td>
+      <td>${escapeReportHtml(row.markedAt)}</td>
+    </tr>
+  `).join("");
+}
+
+function downloadAttendanceReportPdf() {
+  const PdfConstructor = window.jspdf && window.jspdf.jsPDF;
+  if (!PdfConstructor) {
+    showUIMessage("PDF support could not be loaded. Check your internet connection and reload the dashboard.", true);
+    return;
+  }
+
+  try {
+  const reportDate = getAttendanceReportDate();
+  const rows = getAttendanceReportRows();
+  const markedCount = rows.filter((row) => row.isMarked).length;
+  const selectedDriver = getSelectedAttendanceDriver();
+  const reportTitle = selectedDriver && rows[0]
+    ? `Attendance Report - ${rows[0].driverName}`
+    : "Driver Attendance Report";
+  const doc = new PdfConstructor({ orientation: "landscape", unit: "mm", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const left = 12;
+  const columns = [
+    { label: "Driver", key: "driverName", width: 68 },
+    { label: "Bus", key: "busNo", width: 52 },
+    { label: "Route", key: "routeName", width: 85 },
+    { label: "Status", key: "status", width: 35 },
+    { label: "Marked At", key: "markedAt", width: 35 },
+  ];
+  const tableWidth = columns.reduce((total, column) => total + column.width, 0);
+  const tableLeft = Math.max(left, (pageWidth - tableWidth) / 2);
+  let y = 48;
+
+  const drawHeader = () => {
+    doc.setFillColor(37, 99, 235);
+    doc.rect(tableLeft, y, tableWidth, 9, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(255, 255, 255);
+    let x = tableLeft + 2;
+    columns.forEach((column) => {
+      doc.text(column.label, x, y + 6);
+      x += column.width;
+    });
+    y += 9;
+  };
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.setTextColor(30, 41, 59);
+  doc.text(reportTitle, left, 17);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text(`Report date: ${reportDate}`, left, 25);
+  doc.text(
+    selectedDriver
+      ? `Status: ${rows[0] && rows[0].isMarked ? "Attendance marked" : "Not marked"}`
+      : `Summary: ${markedCount} marked, ${rows.length - markedCount} not marked, ${rows.length} drivers`,
+    left,
+    32
+  );
+  doc.text(`Generated: ${new Date().toLocaleString("en-IN")}`, left, 39);
+
+  drawHeader();
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(30, 41, 59);
+
+  (rows.length ? rows : [{ driverName: "No drivers found", busNo: "—", routeName: "—", status: "—", markedAt: "—" }]).forEach((row, index) => {
+    const cellLines = columns.map((column) =>
+      doc.splitTextToSize(String(row[column.key] || "—"), column.width - 4)
+    );
+    const lineCount = Math.max(...cellLines.map((lines) => lines.length));
+    const rowHeight = Math.max(8, lineCount * 4 + 3);
+
+    if (y + rowHeight > pageHeight - 12) {
+      doc.addPage();
+      y = 14;
+      drawHeader();
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(30, 41, 59);
+    }
+
+    if (index % 2 === 0) {
+      doc.setFillColor(241, 245, 249);
+      doc.rect(tableLeft, y, tableWidth, rowHeight, "F");
+    }
+    let x = tableLeft + 2;
+    cellLines.forEach((lines, columnIndex) => {
+      doc.text(lines, x, y + 4);
+      x += columns[columnIndex].width;
+    });
+    doc.setDrawColor(226, 232, 240);
+    doc.line(tableLeft, y + rowHeight, tableLeft + tableWidth, y + rowHeight);
+    y += rowHeight;
+  });
+
+  const driverFilePart = selectedDriver && rows[0]
+    ? `-${rows[0].driverName.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}`
+    : "";
+  doc.save(`driver-attendance${driverFilePart}-${reportDate}.pdf`);
+  } catch (error) {
+    console.error("Could not generate the attendance PDF:", error);
+    showUIMessage("Could not generate the attendance PDF. Please try again.", true);
+  }
+}
+
+const attendanceReportDateInput = document.getElementById("attendanceReportDate");
+if (attendanceReportDateInput) {
+  attendanceReportDateInput.value = new Date().toISOString().slice(0, 10);
+  attendanceReportDateInput.addEventListener("change", renderAttendanceReport);
+}
+
+const attendanceReportDriverSelect = document.getElementById("attendanceReportDriver");
+if (attendanceReportDriverSelect) {
+  attendanceReportDriverSelect.addEventListener("change", renderAttendanceReport);
+}
+
+const refreshAttendanceReportBtn = document.getElementById("refreshAttendanceReportBtn");
+if (refreshAttendanceReportBtn) {
+  refreshAttendanceReportBtn.addEventListener("click", async () => {
+    if (!db || typeof db.ref !== "function") {
+      renderAttendanceReport();
+      showUIMessage("Showing attendance records available on this device. Cloud database is not connected.", true);
+      return;
+    }
+    try {
+      const snapshot = await db.ref("attendance").once("value");
+      allAttendance = { ...allAttendance, ...(snapshot.val() || {}) };
+      renderAttendanceReport();
+      showUIMessage("Attendance report refreshed.", false);
+    } catch (error) {
+      console.error("Could not refresh attendance report:", error);
+      showUIMessage("Could not refresh attendance from the cloud. Showing the latest available records.", true);
+    }
+  });
+}
+
+const downloadAttendancePdfBtn = document.getElementById("downloadAttendancePdfBtn");
+if (downloadAttendancePdfBtn) {
+  downloadAttendancePdfBtn.addEventListener("click", downloadAttendanceReportPdf);
+}
+
 // ========================================================
 // 5. FIREBASE CLOUD LISTENERS (SYNC)
 // ========================================================
@@ -334,6 +810,7 @@ function initDashboardListeners() {
         renderBusStatusWidget();
         updateOverviewStats();
         updateAllFleetMaps();
+        renderAttendanceReport();
       },
       (err) => console.warn("Buses cloud sync notice:", err.message)
     );
@@ -346,21 +823,77 @@ function initDashboardListeners() {
       ref(db, "users"),
       (snapshot) => {
         const usersData = snapshot.val() || {};
+        const cloudDrivers = {};
         Object.entries(usersData).forEach(([uid, u]) => {
           if (u && u.role === "driver") {
-            allDrivers[uid] = { uid, ...u };
+            cloudDrivers[uid] = { uid, ...u };
           }
         });
+        allDrivers = { ...allDrivers, ...cloudDrivers };
         localStorage.setItem("smartbus_drivers", JSON.stringify(allDrivers));
+        renderNotificationRecipientOptions();
         renderDriversTable();
         renderBusesTable();
         renderRoutesTable();
         updateOverviewStats();
+        renderAttendanceReport();
       },
       (err) => console.warn("Drivers cloud sync notice:", err.message)
     );
     activeListeners.push(unsubUsers);
   } catch (e) {}
+
+  // Listen to messages sent by admins
+  try {
+    const unsubNotifications = onValue(
+      ref(db, "adminSentNotifications").limitToLast(100),
+      (snapshot) => renderAdminNotifications(snapshot.val() || {}),
+      (err) => {
+        console.error("Could not load admin notifications:", err);
+        showUIMessage("Could not load sent admin messages.", true);
+      }
+    );
+    activeListeners.push(unsubNotifications);
+  } catch (error) {
+    console.error("Could not start admin notification listener:", error);
+  }
+
+  // Listen to driver attendance records
+  try {
+    const unsubAttendance = onValue(
+      ref(db, "attendance"),
+      (snapshot) => {
+        allAttendance = { ...allAttendance, ...(snapshot.val() || {}) };
+        renderAttendanceReport();
+      },
+      (err) => {
+        console.warn("Attendance cloud sync notice:", err.message);
+        showUIMessage("Could not load attendance from the cloud. Showing locally saved records.", true);
+      }
+    );
+    activeListeners.push(unsubAttendance);
+  } catch (error) {
+    console.error("Could not start attendance listener:", error);
+  }
+
+  // Listen to driver messages
+  try {
+    const alertsRef = ref(db, "alerts");
+    const recentAlertsRef = alertsRef && typeof alertsRef.limitToLast === "function"
+      ? alertsRef.limitToLast(50)
+      : alertsRef;
+    const unsubAlerts = onValue(
+      recentAlertsRef,
+      (snapshot) => renderDriverAlerts(snapshot.val() || {}),
+      (err) => {
+        console.error("Could not load driver messages:", err);
+        showUIMessage("Could not load driver messages from the database.", true);
+      }
+    );
+    activeListeners.push(unsubAlerts);
+  } catch (error) {
+    console.error("Could not start driver alert listener:", error);
+  }
 
   // Listen to routes
   try {
@@ -374,6 +907,7 @@ function initDashboardListeners() {
         renderBusesTable();
         renderDriversTable();
         updateOverviewStats();
+        renderAttendanceReport();
       },
       (err) => console.warn("Routes cloud sync notice:", err.message)
     );

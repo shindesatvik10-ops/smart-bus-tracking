@@ -74,7 +74,7 @@ A real-time public transit tracking and fleet management system built with **van
 
 The default Firebase web app configuration is in `frontend/firebase-config.js` and is public client configuration, not a server credential. To use another Firebase project, copy `frontend/firebase-config.example.js` to `frontend/firebase-config.local.js` and add that project's settings. The local override is ignored by Git.
 
-Create Admin and driver accounts in Firebase Authentication and configure the database rules for your project. Never expose Firebase Admin service-account keys in frontend files.
+Create Admin and driver accounts in Firebase Authentication and configure the database rules for your project. For admin-to-driver messages, the authenticated admin must also have `role: "admin"` in Realtime Database at `users/{uid}`, and the rules in `database.rules.json` must be deployed. Never expose Firebase Admin service-account keys in frontend files.
 
 ---
 
