@@ -10,6 +10,8 @@ let currentShiftLogId = null;
 let assignedBus = null;
 let assignedRoute = null;
 let assignedRouteDoc = null;
+let assignedRouteListener = null;
+let assignedRouteListenerId = null;
 
 let isDutyActive = false;
 let isDutyRestoreStarted = false;
@@ -17,6 +19,7 @@ let todayAttendanceMarked = false;
 let attendanceMarkInProgress = false;
 let hasLiveGpsFix = false;
 let driverNotificationsListenerAttached = false;
+let driverBusesListenerAttached = false;
 let driverTargetedNotifications = {};
 let driverBroadcastNotifications = {};
 let geoWatchId = null;
@@ -36,12 +39,18 @@ let driverStopMarkers = [];
 let lastSentTickerInterval = null;
 let isLocationWritePending = false;
 let locationRetryTimer = null;
+let gpsPollTimer = null;
+let lastGpsCallbackAt = 0;
+let isGpsPollPending = false;
+let gpsWriteBlocked = false;
 
 const DEFAULT_CENTER = [16.7050, 74.2433];
 const ACTIVE_DUTY_STORAGE_KEY = "smartbus_active_duties";
 const PENDING_LOCATIONS_STORAGE_KEY = "smartbus_pending_locations";
 const PRECISE_GPS_ACCURACY_METERS = 100;
-const MAX_BROADCAST_GPS_ACCURACY_METERS = 250;
+const MAX_BROADCAST_GPS_ACCURACY_METERS = 500;
+const LOCATION_UPDATE_INTERVAL_MS = 10000;
+const MAX_QUEUED_LOCATION_AGE_MS = 30000;
 
 function readActiveDuties() {
   try {
@@ -116,12 +125,18 @@ function showLocationWaitingForNetwork() {
 }
 
 async function flushQueuedLocation() {
-  if (isLocationWritePending || !isDutyActive || !navigator.onLine || !db || typeof db.ref !== "function") return;
+  if (isLocationWritePending || gpsWriteBlocked || !isDutyActive || !navigator.onLine || !db || typeof db.ref !== "function") return;
 
   const queuedLocations = readPendingLocations();
   const queued = queuedLocations[assignedBus];
   const activeUid = (currentUser && currentUser.uid) || sessionStorage.getItem("driverUid");
   if (!queued || queued.driverUid !== activeUid || !queued.payload) return;
+  if (Date.now() - queued.capturedAt > MAX_QUEUED_LOCATION_AGE_MS) {
+    clearQueuedLocation(assignedBus, queued.capturedAt);
+    hasLiveGpsFix = false;
+    if (tripStatText) tripStatText.textContent = "Waiting for a fresh GPS fix";
+    return;
+  }
 
   isLocationWritePending = true;
   try {
@@ -137,7 +152,7 @@ async function flushQueuedLocation() {
 
     try {
       const localLocations = JSON.parse(localStorage.getItem("smartbus_locations") || "{}");
-      localLocations[assignedBus] = { ...queued.payload, ts: queued.capturedAt };
+      localLocations[assignedBus] = { ...queued.payload, ts: queued.payload.ts };
       localStorage.setItem("smartbus_locations", JSON.stringify(localLocations));
       window.dispatchEvent(new Event("storage"));
     } catch (storageError) {
@@ -169,6 +184,19 @@ async function flushQueuedLocation() {
     if (tripStatText) tripStatText.textContent = isApproximate ? "Sharing Approximate GPS" : "Sharing Real GPS";
     updateAttendanceUI(todayAttendanceMarked);
   } catch (error) {
+    const errorCode = String(error && error.code || "").toLowerCase();
+    if (errorCode.includes("permission_denied")) {
+      gpsWriteBlocked = true;
+      hasLiveGpsFix = false;
+      if (tripLiveIndicator) tripLiveIndicator.style.display = "none";
+      if (tripBadge) tripBadge.style.display = "none";
+      if (broadcastStatusBanner) broadcastStatusBanner.style.display = "none";
+      showGpsError(
+        "Firebase denied this GPS update. Confirm the signed-in Firebase account is the assigned driver for this bus, then sign in again."
+      );
+      console.error("GPS update rejected by Realtime Database rules:", error);
+      return;
+    }
     console.warn("GPS update queued until network is available:", error.message);
     showLocationWaitingForNetwork();
     if (locationRetryTimer) clearTimeout(locationRetryTimer);
@@ -609,7 +637,7 @@ function initDriverMap(centerCoords = DEFAULT_CENTER) {
 }
 
 function drawAssignedRouteOnMap() {
-  if (!driverMap || !assignedRouteDoc || !Array.isArray(assignedRouteDoc.stops)) return;
+  if (!driverMap) return;
 
   if (driverRoutePolyline) {
     driverMap.removeLayer(driverRoutePolyline);
@@ -617,6 +645,8 @@ function drawAssignedRouteOnMap() {
   }
   driverStopMarkers.forEach((m) => driverMap.removeLayer(m));
   driverStopMarkers = [];
+
+  if (!assignedRouteDoc || !Array.isArray(assignedRouteDoc.stops)) return;
 
   const stops = assignedRouteDoc.stops;
   if (stops.length < 2) return;
@@ -930,9 +960,12 @@ async function beginDuty({ restore = false } = {}) {
   }
 
   const activeUid = (currentUser && currentUser.uid) || sessionStorage.getItem("driverUid") || "driver_sunil";
-  const authenticatedUid = auth && auth.currentUser && auth.currentUser.uid;
-  if (!authenticatedUid && auth && typeof auth.signInAnonymously === "function") {
-    auth.signInAnonymously().catch(() => {});
+  const authenticatedUser = auth && auth.currentUser;
+  if (!authenticatedUser || authenticatedUser.uid !== activeUid) {
+    showGpsError(
+      "Location sharing requires Firebase authentication for this driver. Sign out, sign in with the driver's registered account, and try again."
+    );
+    return;
   }
 
   if (!assignedBus) {
@@ -1039,16 +1072,34 @@ async function beginDuty({ restore = false } = {}) {
   lastPosTime = null;
   lastPosLat = null;
   lastPosLng = null;
+  lastGpsCallbackAt = 0;
+  gpsWriteBlocked = false;
 
   geoWatchId = navigator.geolocation.watchPosition(
     onGpsUpdate,
     onGpsError,
     {
       enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 15000,
+      maximumAge: 5000,
+      timeout: 20000,
     }
   );
+  if (gpsPollTimer) clearInterval(gpsPollTimer);
+  gpsPollTimer = setInterval(() => {
+    if (!isDutyActive || isGpsPollPending || Date.now() - lastGpsCallbackAt < LOCATION_UPDATE_INTERVAL_MS) return;
+    isGpsPollPending = true;
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        isGpsPollPending = false;
+        void onGpsUpdate(position);
+      },
+      (error) => {
+        isGpsPollPending = false;
+        if (error.code === 1) void onGpsError(error);
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+    );
+  }, LOCATION_UPDATE_INTERVAL_MS);
   flushQueuedLocation();
 
   // Interval updating the "Last sent: Ns ago" ticker
@@ -1083,6 +1134,11 @@ async function endDuty() {
     navigator.geolocation.clearWatch(geoWatchId);
     geoWatchId = null;
   }
+  if (gpsPollTimer) {
+    clearInterval(gpsPollTimer);
+    gpsPollTimer = null;
+  }
+  isGpsPollPending = false;
 
   // 3. Release wake lock
   await releaseScreenWakeLock();
@@ -1143,7 +1199,23 @@ async function onGpsUpdate(position) {
   if (!isDutyActive) return;
 
   const coords = position.coords;
-  const accuracy = coords.accuracy;
+  lastGpsCallbackAt = Date.now();
+  const latitude = Number(coords.latitude);
+  const longitude = Number(coords.longitude);
+  const accuracy = Number(coords.accuracy);
+  if (
+    !Number.isFinite(latitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    !Number.isFinite(longitude) ||
+    longitude < -180 ||
+    longitude > 180 ||
+    !Number.isFinite(accuracy) ||
+    accuracy < 0
+  ) {
+    showGpsError("The device returned an invalid GPS position. Check that Location Services are enabled and try again.");
+    return;
+  }
   const isApproximateLocation = accuracy > PRECISE_GPS_ACCURACY_METERS;
 
   // Keep waiting for a usable position rather than publishing very uncertain coordinates.
@@ -1173,19 +1245,19 @@ async function onGpsUpdate(position) {
     speedMs = Number(coords.speed);
   } else if (lastPosLat != null && lastPosLng != null && lastPosTime != null) {
     const dtSec = (Date.now() - lastPosTime) / 1000;
-    const distKm = haversineDistanceKm(lastPosLat, lastPosLng, coords.latitude, coords.longitude);
+    const distKm = haversineDistanceKm(lastPosLat, lastPosLng, latitude, longitude);
     if (dtSec > 0) speedMs = (distKm * 1000) / dtSec;
   }
 
-  lastPosLat = coords.latitude;
-  lastPosLng = coords.longitude;
+  lastPosLat = latitude;
+  lastPosLng = longitude;
   lastPosTime = Date.now();
 
   const speedKmH = (speedMs * 3.6).toFixed(1);
   if (dutyGpsSpeed) dutyGpsSpeed.textContent = `${speedKmH} km/h`;
 
   if (driverMarker) {
-    driverMarker.setLatLng([coords.latitude, coords.longitude]);
+    driverMarker.setLatLng([latitude, longitude]);
     driverMarker.setPopupContent(
       `<strong>${assignedBus}</strong><br>Real GPS Speed: ${speedKmH} km/h<br>Accuracy: ±${Math.round(accuracy)}m`
     );
@@ -1196,19 +1268,22 @@ async function onGpsUpdate(position) {
   let distFromLastSent = Infinity;
 
   if (lastSentLat != null && lastSentLng != null) {
-    distFromLastSent = haversineDistanceKm(lastSentLat, lastSentLng, coords.latitude, coords.longitude) * 1000;
+    distFromLastSent = haversineDistanceKm(lastSentLat, lastSentLng, latitude, longitude) * 1000;
   }
 
-  const shouldSend = timeSinceLastSend >= 3000 && (distFromLastSent >= 5 || timeSinceLastSend >= 10000);
+  const shouldSend =
+    timeSinceLastSend >= 3000 &&
+    (distFromLastSent >= 5 || timeSinceLastSend >= LOCATION_UPDATE_INTERVAL_MS);
 
   if (shouldSend) {
+    const serverNow = typeof getServerNow === "function" ? getServerNow() : Date.now();
     const payload = {
-      lat: Number(coords.latitude),
-      lng: Number(coords.longitude),
+      lat: latitude,
+      lng: longitude,
       speed: Number(speedMs),
       heading: coords.heading != null && !isNaN(coords.heading) ? Number(coords.heading) : null,
       accuracy: Math.round(accuracy),
-      ts: typeof serverTimestamp === "function" ? serverTimestamp() : (typeof firebase !== "undefined" && firebase.database ? firebase.database.ServerValue.TIMESTAMP : now),
+      ts: Number.isFinite(serverNow) ? serverNow : now,
     };
 
     try {
@@ -1299,25 +1374,34 @@ function syncDriverAssignment() {
   updateDriverNameUI(driverName);
 
   // Resolve assigned bus
+  const profileIsAuthoritative = currentProfile && currentProfile.role === "driver";
   const profileHasBus = currentProfile && Object.prototype.hasOwnProperty.call(currentProfile, "assignedBus");
-  let newBus = profileHasBus ? currentProfile.assignedBus : (myDriver && myDriver.assignedBus) || null;
+  let newBus = profileHasBus
+    ? currentProfile.assignedBus
+    : profileIsAuthoritative
+      ? null
+      : (myDriver && myDriver.assignedBus) || null;
   if (!newBus && !profileHasBus) {
     const matchingBus = Object.values(localBuses).find(
       (b) => b.assignedDriver === uid || (myDriver && b.assignedDriver === myDriver.uid)
     );
     if (matchingBus) newBus = matchingBus.busNo;
   }
-  if (!newBus && !profileHasBus && sessionStorage.getItem("driverAssignedBus")) {
+  if (!newBus && !profileHasBus && !profileIsAuthoritative && sessionStorage.getItem("driverAssignedBus")) {
     newBus = sessionStorage.getItem("driverAssignedBus");
   }
 
   // Resolve assigned route
   const profileHasRoute = currentProfile && Object.prototype.hasOwnProperty.call(currentProfile, "assignedRoute");
-  let newRoute = profileHasRoute ? currentProfile.assignedRoute : (myDriver && myDriver.assignedRoute) || null;
-  if (!newRoute && newBus && localBuses[newBus] && localBuses[newBus].routeId) {
+  let newRoute = profileHasRoute
+    ? currentProfile.assignedRoute
+    : profileIsAuthoritative
+      ? null
+      : (myDriver && myDriver.assignedRoute) || null;
+  if (!profileHasRoute && !newRoute && newBus && localBuses[newBus] && localBuses[newBus].routeId) {
     newRoute = localBuses[newBus].routeId;
   }
-  if (!newRoute && !profileHasRoute && sessionStorage.getItem("driverAssignedRoute")) {
+  if (!newRoute && !profileHasRoute && !profileIsAuthoritative && sessionStorage.getItem("driverAssignedRoute")) {
     newRoute = sessionStorage.getItem("driverAssignedRoute");
   }
   assignedBus = newBus;
@@ -1330,18 +1414,37 @@ function syncDriverAssignment() {
 
   updateDutyLabels();
 
-  // Populate Route Documentation and Map
-  if (assignedRoute && localRoutes[assignedRoute]) {
-    assignedRouteDoc = localRoutes[assignedRoute];
-    const rName = assignedRouteDoc.name || assignedRoute;
-    if (dutyAssignedRoute) dutyAssignedRoute.textContent = rName;
-    if (statRouteName) statRouteName.textContent = rName;
-    renderRouteStops(assignedRouteDoc.stops || []);
-    drawAssignedRouteOnMap();
-  } else if (assignedRoute) {
-    if (dutyAssignedRoute) dutyAssignedRoute.textContent = assignedRoute;
-    if (statRouteName) statRouteName.textContent = assignedRoute;
+  if (assignedRouteListenerId !== assignedRoute) {
+    if (typeof assignedRouteListener === "function") assignedRouteListener();
+    assignedRouteListener = null;
+    assignedRouteListenerId = assignedRoute;
+    assignedRouteDoc = assignedRoute ? localRoutes[assignedRoute] || null : null;
+    if (assignedRoute && db && typeof db.ref === "function") {
+      const routeRef = db.ref(`routes/${assignedRoute}`);
+      const routeHandler = (snapshot) => {
+        const route = snapshot.val();
+        assignedRouteDoc = route || null;
+        const routeName = (assignedRouteDoc && assignedRouteDoc.name) || assignedRoute || "Not assigned";
+        if (dutyAssignedRoute) dutyAssignedRoute.textContent = routeName;
+        if (statRouteName) statRouteName.textContent = routeName;
+        renderRouteStops((assignedRouteDoc && assignedRouteDoc.stops) || []);
+        drawAssignedRouteOnMap();
+        updateDutyLabels();
+        if (settingsAssignedRoute) settingsAssignedRoute.textContent = routeName;
+      };
+      routeRef.on("value", routeHandler, (error) => {
+        console.error("Could not load the assigned route:", error);
+        if (dutyAssignedRoute) dutyAssignedRoute.textContent = "Route unavailable";
+        if (statRouteName) statRouteName.textContent = "Route unavailable";
+      });
+      assignedRouteListener = () => routeRef.off("value", routeHandler);
+    }
   }
+  const routeName = (assignedRouteDoc && assignedRouteDoc.name) || assignedRoute || "Not assigned";
+  if (dutyAssignedRoute) dutyAssignedRoute.textContent = routeName;
+  if (statRouteName) statRouteName.textContent = routeName;
+  renderRouteStops((assignedRouteDoc && assignedRouteDoc.stops) || []);
+  drawAssignedRouteOnMap();
 
   // Update Settings tab profile fields
   if (settingsDriverUid) settingsDriverUid.textContent = uid;
@@ -1474,23 +1577,22 @@ function loadDriverAssignment(user, profile) {
         }
       });
 
-      if (assignedRoute) {
-        db.ref(`routes/${assignedRoute}`).on("value", (snap) => {
-          const val = snap.val();
-          if (val) {
-            assignedRouteDoc = val;
-            if (dutyAssignedRoute) dutyAssignedRoute.textContent = assignedRouteDoc.name || assignedRoute;
-            if (statRouteName) statRouteName.textContent = assignedRouteDoc.name || assignedRoute;
-            renderRouteStops(assignedRouteDoc.stops || []);
-            drawAssignedRouteOnMap();
-          }
-        });
+      if (!driverBusesListenerAttached) {
+        db.ref("buses").on(
+          "value",
+          (snap) => {
+            localStorage.setItem("smartbus_buses", JSON.stringify(snap.val() || {}));
+            syncDriverAssignment();
+          },
+          (error) => console.error("Could not sync current bus assignments:", error)
+        );
+        driverBusesListenerAttached = true;
       }
 
       db.ref(`users/${user.uid}`).on("value", (snap) => {
         const updated = snap.val();
         if (!updated) return;
-        currentProfile = { ...(currentProfile || {}), ...updated };
+        currentProfile = updated;
         if (updated.name) updateDriverNameUI(updated.name);
         syncDriverAssignment();
       });
@@ -1550,6 +1652,10 @@ function updateDutyLabels() {
   const welcomeSub = document.getElementById("welcomeBannerSub");
   if (welcomeSub && assignedBus && assignedRouteDoc) {
     welcomeSub.innerHTML = `Assigned Bus: <strong style="color:#2563eb;">${assignedBus}</strong> &middot; Route: <strong style="color:#2563eb;">${assignedRouteDoc.name || assignedRoute}</strong>`;
+  } else if (welcomeSub && assignedBus) {
+    welcomeSub.innerHTML = `Assigned Bus: <strong style="color:#2563eb;">${assignedBus}</strong> &middot; Route: <strong>Not assigned</strong>`;
+  } else if (welcomeSub) {
+    welcomeSub.textContent = "No bus or route is currently assigned. Contact the transport administrator.";
   }
 
   if (driverMarker) {

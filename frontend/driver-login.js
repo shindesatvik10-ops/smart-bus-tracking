@@ -363,10 +363,20 @@ loginForm.addEventListener("submit", async function (event) {
       (password === "123" && (driver.uid === "driver_sunil" || !driver.password));
 
     if (isPasswordCorrect) {
+      let firebaseDriver = null;
+      if (typeof auth !== "undefined" && auth && typeof auth.signInWithEmailAndPassword === "function" && driver.email) {
+        try {
+          const credential = await auth.signInWithEmailAndPassword(driver.email, password);
+          firebaseDriver = credential.user;
+        } catch (authErr) {
+          console.warn("Firebase driver authentication notice:", authErr.message);
+        }
+      }
+
       // Enforce single-device session lease (non-blocking if offline/denied)
       try {
         if (typeof claimDriverSession === "function") {
-          await claimDriverSession(driver);
+          await claimDriverSession(firebaseDriver || driver);
         }
       } catch (sessionErr) {
         if (sessionErr.code === "driver-session-active") {
@@ -377,12 +387,7 @@ loginForm.addEventListener("submit", async function (event) {
         console.warn("Session lease notice:", sessionErr.message);
       }
 
-      // Background Firebase Auth if driver has an email registered in Firebase Auth
-      if (typeof auth !== "undefined" && auth && typeof auth.signInWithEmailAndPassword === "function" && driver.email) {
-        auth.signInWithEmailAndPassword(driver.email, password).catch(() => {});
-      }
-
-      saveDriverSession(driver);
+      saveDriverSession(firebaseDriver ? { ...driver, uid: firebaseDriver.uid } : driver);
 
       loginMessage.textContent = "Login successful! Redirecting...";
       loginMessage.style.color = "green";

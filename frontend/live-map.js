@@ -91,8 +91,13 @@ let unsubRoutes = null;
 let unsubLocations = null;
 let unsubDrivers = null;
 let popupTickerInterval = null;
+let liveStatusInterval = null;
+let storageSyncHandler = null;
 let hasCloudBusesSnapshot = false;
 let hasCloudLocationsSnapshot = false;
+let hasCloudDriversSnapshot = false;
+let hasCloudRoutesSnapshot = false;
+let busMarkerState = {};
 
 let activeSearchFilter = null; // { fromStop, toStop, matchedRouteIds }
 
@@ -322,12 +327,18 @@ function updateBusMarkers() {
     const popupHtml = buildPopupHtml(busNo, live, loc, bus, route, driverName);
     const heading = loc.heading != null && !isNaN(loc.heading) ? Number(loc.heading) : null;
     const targetLatLng = [Number(loc.lat), Number(loc.lng)];
+    const previousState = busMarkerState[busNo];
 
     if (busMarkers[busNo]) {
-      // Smoothly update existing marker position, icon rotation, and popup content
-      busMarkers[busNo].setLatLng(targetLatLng);
-      busMarkers[busNo].setIcon(createBusIcon(heading, true));
-      busMarkers[busNo].setPopupContent(popupHtml);
+      if (!previousState || previousState.lat !== targetLatLng[0] || previousState.lng !== targetLatLng[1]) {
+        busMarkers[busNo].setLatLng(targetLatLng);
+      }
+      if (!previousState || previousState.heading !== heading) {
+        busMarkers[busNo].setIcon(createBusIcon(heading, true));
+      }
+      if (!previousState || previousState.popupHtml !== popupHtml) {
+        busMarkers[busNo].setPopupContent(popupHtml);
+      }
     } else {
       // Create new marker
       const marker = L.marker(targetLatLng, { icon: createBusIcon(heading, true) })
@@ -340,6 +351,13 @@ function updateBusMarkers() {
         .addTo(currentMap);
       busMarkers[busNo] = marker;
     }
+    busMarkerState[busNo] = {
+      lat: targetLatLng[0],
+      lng: targetLatLng[1],
+      heading,
+      ts: loc.ts,
+      popupHtml,
+    };
   });
 
   // Remove markers that went offline
@@ -347,6 +365,7 @@ function updateBusMarkers() {
     if (!activeBusNos.has(busNo)) {
       currentMap.removeLayer(busMarkers[busNo]);
       delete busMarkers[busNo];
+      delete busMarkerState[busNo];
     }
   });
 
@@ -807,6 +826,10 @@ function initLiveMap(containerId, searchUiIds = {}) {
 
   // Cleanup earlier instance
   destroyLiveMap();
+  hasCloudBusesSnapshot = false;
+  hasCloudLocationsSnapshot = false;
+  hasCloudDriversSnapshot = false;
+  hasCloudRoutesSnapshot = false;
 
   // Ensure Leaflet default marker icons load from CDN without 404s
   if (typeof L !== "undefined" && L.Icon && L.Icon.Default) {
@@ -965,14 +988,18 @@ function initLiveMap(containerId, searchUiIds = {}) {
   // Cross-tab real-time sync for routes, buses, and live positions
   const syncFromStorage = () => {
     try {
+    if (!hasCloudRoutesSnapshot) {
       const cachedRoutes = localStorage.getItem("smartbus_routes");
       if (cachedRoutes) allRoutes = { ...allRoutes, ...JSON.parse(cachedRoutes) };
-      if (!hasCloudBusesSnapshot) {
-        const cachedBuses = localStorage.getItem("smartbus_buses");
-        if (cachedBuses) allBuses = { ...allBuses, ...JSON.parse(cachedBuses) };
-      }
+    }
+    if (!hasCloudBusesSnapshot) {
+      const cachedBuses = localStorage.getItem("smartbus_buses");
+      if (cachedBuses) allBuses = { ...allBuses, ...JSON.parse(cachedBuses) };
+    }
+    if (!hasCloudDriversSnapshot) {
       const cachedDrivers = localStorage.getItem("smartbus_drivers");
       if (cachedDrivers) allDrivers = { ...allDrivers, ...JSON.parse(cachedDrivers) };
+    }
       if (!hasCloudLocationsSnapshot) {
         const cachedLocs = localStorage.getItem("smartbus_locations");
         if (cachedLocs) allLocations = { ...allLocations, ...JSON.parse(cachedLocs) };
@@ -984,9 +1011,9 @@ function initLiveMap(containerId, searchUiIds = {}) {
     } catch (err) {}
   };
 
-  window.addEventListener("storage", syncFromStorage);
-  // Also poll every 1.5 seconds for same-tab updates or non-storage-event environments
-  const localSyncInterval = setInterval(syncFromStorage, 1500);
+  if (storageSyncHandler) window.removeEventListener("storage", storageSyncHandler);
+  storageSyncHandler = syncFromStorage;
+  window.addEventListener("storage", storageSyncHandler);
 
   // Load live data from Firebase RTDB if available
   try {
@@ -999,10 +1026,10 @@ function initLiveMap(containerId, searchUiIds = {}) {
           routesRef,
           (snap) => {
             const cloudRoutes = snap.val() || {};
-            if (Object.keys(cloudRoutes).length > 0) {
-              allRoutes = { ...allRoutes, ...cloudRoutes };
-              populateDatalist(searchUi.datalist);
-            }
+            hasCloudRoutesSnapshot = true;
+            allRoutes = cloudRoutes;
+            populateDatalist(searchUi.datalist);
+            if (activeSearchFilter) handleSearch(searchUi);
           },
           (err) => console.warn("Live routes sync notice:", err.message)
         );
@@ -1018,6 +1045,7 @@ function initLiveMap(containerId, searchUiIds = {}) {
             hasCloudBusesSnapshot = true;
             allBuses = cloudBuses;
             updateBusMarkers();
+            if (activeSearchFilter) handleSearch(searchUi);
           },
           (err) => console.warn("Live buses sync notice:", err.message)
         );
@@ -1043,12 +1071,15 @@ function initLiveMap(containerId, searchUiIds = {}) {
           usersRef,
           (snap) => {
             const users = snap.val() || {};
+            hasCloudDriversSnapshot = true;
+            allDrivers = {};
             Object.entries(users).forEach(([uid, u]) => {
               if (u && (u.role === "driver" || !u.role)) {
                 allDrivers[uid] = u;
               }
             });
             updateBusMarkers();
+            if (activeSearchFilter) handleSearch(searchUi);
           },
           (err) => console.warn("Live drivers sync notice:", err.message)
         );
@@ -1062,10 +1093,12 @@ function initLiveMap(containerId, searchUiIds = {}) {
   if (popupTickerInterval) clearInterval(popupTickerInterval);
   popupTickerInterval = setInterval(() => {
     tickPopupsEverySecond();
-    updateBusMarkers();
   }, 1000);
+  if (liveStatusInterval) clearInterval(liveStatusInterval);
+  liveStatusInterval = setInterval(updateBusMarkers, 5000);
 
   // Clean up on unload
+  window.removeEventListener("beforeunload", destroyLiveMap);
   window.addEventListener("beforeunload", destroyLiveMap);
 
   return currentMap;
@@ -1077,12 +1110,17 @@ function destroyLiveMap() {
   if (typeof unsubLocations === "function") unsubLocations();
   if (typeof unsubDrivers === "function") unsubDrivers();
   if (popupTickerInterval) clearInterval(popupTickerInterval);
+  if (liveStatusInterval) clearInterval(liveStatusInterval);
+  if (storageSyncHandler) window.removeEventListener("storage", storageSyncHandler);
+  window.removeEventListener("beforeunload", destroyLiveMap);
 
   unsubRoutes = null;
   unsubBuses = null;
   unsubLocations = null;
   unsubDrivers = null;
   popupTickerInterval = null;
+  liveStatusInterval = null;
+  storageSyncHandler = null;
 
   clearRouteGraphics();
 
@@ -1091,6 +1129,7 @@ function destroyLiveMap() {
     currentMap = null;
   }
   busMarkers = {};
+  busMarkerState = {};
   stopMarkers = [];
   routePolylines = [];
   activeSearchFilter = null;

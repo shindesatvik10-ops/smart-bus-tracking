@@ -802,7 +802,7 @@ function initDashboardListeners() {
       ref(db, "buses"),
       (snapshot) => {
         const cloudBuses = snapshot.val() || {};
-        allBuses = { ...allBuses, ...cloudBuses };
+        allBuses = cloudBuses;
         localStorage.setItem("smartbus_buses", JSON.stringify(allBuses));
         renderBusesTable();
         renderDriversTable();
@@ -829,7 +829,7 @@ function initDashboardListeners() {
             cloudDrivers[uid] = { uid, ...u };
           }
         });
-        allDrivers = { ...allDrivers, ...cloudDrivers };
+        allDrivers = cloudDrivers;
         localStorage.setItem("smartbus_drivers", JSON.stringify(allDrivers));
         renderNotificationRecipientOptions();
         renderDriversTable();
@@ -901,7 +901,7 @@ function initDashboardListeners() {
       ref(db, "routes"),
       (snapshot) => {
         const cloudRoutes = snapshot.val() || {};
-        allRoutes = { ...allRoutes, ...cloudRoutes };
+        allRoutes = cloudRoutes;
         localStorage.setItem("smartbus_routes", JSON.stringify(allRoutes));
         renderRoutesTable();
         renderBusesTable();
@@ -1465,109 +1465,144 @@ window.handleDeleteDriver = async function (uid) {
 
 window.handleAssignBus = async function (driverUid, newBusNo) {
   const driver = allDrivers[driverUid];
-  if (!driver) return;
-  const oldBusNo = driver.assignedBus;
-
-  if (oldBusNo === newBusNo) return;
-
-  // Optimistic local update
-  if (oldBusNo && allBuses[oldBusNo]) {
-    allBuses[oldBusNo].assignedDriver = null;
-    allBuses[oldBusNo].driverName = null;
+  if (!driver) {
+    showUIMessage("Selected driver could not be found. Refresh the driver list and try again.", true);
+    return;
   }
 
-  if (newBusNo && allBuses[newBusNo]) {
-    const previousDriverUid = allBuses[newBusNo].assignedDriver;
-    if (previousDriverUid && allDrivers[previousDriverUid] && previousDriverUid !== driverUid) {
+  const oldBusNo =
+    Object.entries(allBuses).find(([, bus]) => bus && bus.assignedDriver === driverUid)?.[0] ||
+    driver.assignedBus ||
+    null;
+  const selectedBus = newBusNo || null;
+  if (selectedBus && !allBuses[selectedBus]) {
+    showUIMessage("Selected bus could not be found. Refresh the bus list and try again.", true);
+    renderDriversTable();
+    return;
+  }
+  if (oldBusNo === selectedBus) return;
+  if (!db || typeof db.ref !== "function") {
+    showUIMessage("Cannot assign a bus while the database is unavailable. No changes were saved.", true);
+    return;
+  }
+
+  const previousDriverUid = selectedBus && allBuses[selectedBus].assignedDriver;
+  const selectedBusRoute = selectedBus
+    ? (driver.assignedRoute || allBuses[selectedBus].routeId || null)
+    : null;
+  if (
+    oldBusNo === selectedBus &&
+    (!selectedBus ||
+      (driver.assignedBus === selectedBus &&
+        driver.assignedRoute === selectedBusRoute &&
+        allBuses[selectedBus].assignedDriver === driverUid))
+  ) {
+    return;
+  }
+  const updates = {};
+  [oldBusNo, selectedBus].filter(Boolean).forEach((busNo) => {
+    updates[`buses/${busNo}/sharing`] = false;
+    updates[`buses/${busNo}/currentDriver`] = "";
+    updates[`locations/${busNo}/ts`] = 0;
+  });
+  if (oldBusNo) {
+    updates[`buses/${oldBusNo}/assignedDriver`] = "";
+    updates[`buses/${oldBusNo}/driverName`] = "";
+  }
+  updates[`users/${driverUid}/assignedBus`] = selectedBus || "";
+  if (selectedBus) {
+    updates[`buses/${selectedBus}/assignedDriver`] = driverUid;
+    updates[`buses/${selectedBus}/driverName`] = driver.name || "Driver";
+    updates[`buses/${selectedBus}/routeId`] = selectedBusRoute || "";
+    updates[`users/${driverUid}/assignedRoute`] = selectedBusRoute || "";
+  }
+  if (previousDriverUid && previousDriverUid !== driverUid) {
+    updates[`users/${previousDriverUid}/assignedBus`] = "";
+  }
+
+  try {
+    await db.ref().update(updates);
+
+    if (oldBusNo && allBuses[oldBusNo]) {
+      allBuses[oldBusNo].assignedDriver = null;
+      allBuses[oldBusNo].driverName = null;
+      allBuses[oldBusNo].sharing = false;
+      allBuses[oldBusNo].currentDriver = null;
+      if (allLocations[oldBusNo]) allLocations[oldBusNo].ts = 0;
+    }
+    if (previousDriverUid && previousDriverUid !== driverUid && allDrivers[previousDriverUid]) {
       allDrivers[previousDriverUid].assignedBus = null;
     }
-    allBuses[newBusNo].assignedDriver = driverUid;
-    allBuses[newBusNo].driverName = driver.name || "Driver";
-    driver.assignedBus = newBusNo;
-
-    if (driver.assignedRoute) {
-      allBuses[newBusNo].routeId = driver.assignedRoute;
-    } else if (allBuses[newBusNo].routeId) {
-      // Auto-adopt the route from the bus if driver had no route!
-      driver.assignedRoute = allBuses[newBusNo].routeId;
+    driver.assignedBus = selectedBus;
+    if (selectedBus) {
+      allBuses[selectedBus].assignedDriver = driverUid;
+      allBuses[selectedBus].driverName = driver.name || "Driver";
+      allBuses[selectedBus].routeId = selectedBusRoute;
+      allBuses[selectedBus].sharing = false;
+      allBuses[selectedBus].currentDriver = null;
+      if (allLocations[selectedBus]) allLocations[selectedBus].ts = 0;
+      driver.assignedRoute = selectedBusRoute;
     }
-  } else {
-    driver.assignedBus = null;
-  }
 
-  localStorage.setItem("smartbus_drivers", JSON.stringify(allDrivers));
-  localStorage.setItem("smartbus_buses", JSON.stringify(allBuses));
-  try {
+    localStorage.setItem("smartbus_drivers", JSON.stringify(allDrivers));
+    localStorage.setItem("smartbus_buses", JSON.stringify(allBuses));
     localStorage.setItem("smartbus_assignment_sync", Date.now().toString());
-  } catch (e) {}
-  window.dispatchEvent(new Event("storage"));
-
-  renderDriversTable();
-  renderBusesTable();
-  updateOverviewStats();
-  showUIMessage("Bus assignment synchronized successfully.", false);
-
-  // Background multi-path update
-  if (typeof update === "function" && typeof ref === "function") {
-    try {
-      const updates = {};
-      if (oldBusNo) {
-        updates[`buses/${oldBusNo}/assignedDriver`] = null;
-      }
-      if (newBusNo) {
-        updates[`buses/${newBusNo}/assignedDriver`] = driverUid;
-        updates[`buses/${newBusNo}/driverName`] = driver.name || "Driver";
-        updates[`users/${driverUid}/assignedBus`] = newBusNo;
-        if (driver.assignedRoute) {
-          updates[`buses/${newBusNo}/routeId`] = driver.assignedRoute;
-          updates[`users/${driverUid}/assignedRoute`] = driver.assignedRoute;
-        }
-      } else {
-        updates[`users/${driverUid}/assignedBus`] = null;
-      }
-      const rootRef = ref(db);
-      if (rootRef) update(rootRef, updates).catch((err) => console.warn("Firebase assign sync notice:", err.message));
-    } catch (e) {}
+    window.dispatchEvent(new Event("storage"));
+    renderDriversTable();
+    renderBusesTable();
+    updateOverviewStats();
+    showUIMessage("Bus, driver, and route assignment saved and synchronized.", false);
+  } catch (error) {
+    console.error("Could not save bus assignment:", error);
+    showUIMessage(`Bus assignment was not saved: ${error.message || "database update failed"}`, true);
+    renderDriversTable();
   }
 };
 
 window.handleAssignRoute = async function (driverUid, routeId) {
   const driver = allDrivers[driverUid];
-  if (!driver) return;
-
-  driver.assignedRoute = routeId || null;
-  if (driver.assignedBus && allBuses[driver.assignedBus]) {
-    allBuses[driver.assignedBus].routeId = routeId || null;
-  } else {
-    const matchingBus = Object.values(allBuses).find((b) => b.assignedDriver === driverUid);
-    if (matchingBus) {
-      matchingBus.routeId = routeId || null;
-      driver.assignedBus = matchingBus.busNo;
-    }
+  if (!driver) {
+    showUIMessage("Selected driver could not be found. Refresh the driver list and try again.", true);
+    return;
   }
 
-  localStorage.setItem("smartbus_drivers", JSON.stringify(allDrivers));
-  localStorage.setItem("smartbus_buses", JSON.stringify(allBuses));
+  const selectedRoute = routeId || null;
+  if (selectedRoute && !allRoutes[selectedRoute]) {
+    showUIMessage("Selected route could not be found. Refresh the route list and try again.", true);
+    renderDriversTable();
+    return;
+  }
+  const assignedBusNo =
+    driver.assignedBus ||
+    Object.entries(allBuses).find(([, bus]) => bus && bus.assignedDriver === driverUid)?.[0] ||
+    null;
+  if (!db || typeof db.ref !== "function") {
+    showUIMessage("Cannot assign a route while the database is unavailable. No changes were saved.", true);
+    return;
+  }
+
+  const updates = { [`users/${driverUid}/assignedRoute`]: selectedRoute || "" };
+  if (assignedBusNo) updates[`buses/${assignedBusNo}/routeId`] = selectedRoute || "";
+
   try {
+    await db.ref().update(updates);
+    driver.assignedRoute = selectedRoute;
+    if (assignedBusNo) {
+      driver.assignedBus = assignedBusNo;
+      allBuses[assignedBusNo].routeId = selectedRoute;
+    }
+    localStorage.setItem("smartbus_drivers", JSON.stringify(allDrivers));
+    localStorage.setItem("smartbus_buses", JSON.stringify(allBuses));
     localStorage.setItem("smartbus_assignment_sync", Date.now().toString());
-  } catch (e) {}
-  window.dispatchEvent(new Event("storage"));
-
-  renderDriversTable();
-  renderBusesTable();
-  updateOverviewStats();
-  showUIMessage("Route assignment synchronized successfully.", false);
-
-  if (typeof update === "function" && typeof ref === "function") {
-    try {
-      const updates = {};
-      updates[`users/${driverUid}/assignedRoute`] = routeId || null;
-      if (driver.assignedBus) {
-        updates[`buses/${driver.assignedBus}/routeId`] = routeId || null;
-      }
-      const rootRef = ref(db);
-      if (rootRef) update(rootRef, updates).catch((err) => console.warn("Firebase route assign notice:", err.message));
-    } catch (e) {}
+    window.dispatchEvent(new Event("storage"));
+    renderDriversTable();
+    renderBusesTable();
+    updateOverviewStats();
+    showUIMessage("Route assignment saved and synchronized.", false);
+  } catch (error) {
+    console.error("Could not save route assignment:", error);
+    showUIMessage(`Route assignment was not saved: ${error.message || "database update failed"}`, true);
+    renderDriversTable();
   }
 };
 
