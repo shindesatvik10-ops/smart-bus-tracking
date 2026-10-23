@@ -91,6 +91,8 @@ let unsubRoutes = null;
 let unsubLocations = null;
 let unsubDrivers = null;
 let popupTickerInterval = null;
+let hasCloudBusesSnapshot = false;
+let hasCloudLocationsSnapshot = false;
 
 let activeSearchFilter = null; // { fromStop, toStop, matchedRouteIds }
 
@@ -965,12 +967,16 @@ function initLiveMap(containerId, searchUiIds = {}) {
     try {
       const cachedRoutes = localStorage.getItem("smartbus_routes");
       if (cachedRoutes) allRoutes = { ...allRoutes, ...JSON.parse(cachedRoutes) };
-      const cachedBuses = localStorage.getItem("smartbus_buses");
-      if (cachedBuses) allBuses = { ...allBuses, ...JSON.parse(cachedBuses) };
+      if (!hasCloudBusesSnapshot) {
+        const cachedBuses = localStorage.getItem("smartbus_buses");
+        if (cachedBuses) allBuses = { ...allBuses, ...JSON.parse(cachedBuses) };
+      }
       const cachedDrivers = localStorage.getItem("smartbus_drivers");
       if (cachedDrivers) allDrivers = { ...allDrivers, ...JSON.parse(cachedDrivers) };
-      const cachedLocs = localStorage.getItem("smartbus_locations");
-      if (cachedLocs) allLocations = { ...allLocations, ...JSON.parse(cachedLocs) };
+      if (!hasCloudLocationsSnapshot) {
+        const cachedLocs = localStorage.getItem("smartbus_locations");
+        if (cachedLocs) allLocations = { ...allLocations, ...JSON.parse(cachedLocs) };
+      }
 
       populateDatalist(searchUi.datalist);
       updateBusMarkers();
@@ -1009,10 +1015,9 @@ function initLiveMap(containerId, searchUiIds = {}) {
           busesRef,
           (snap) => {
             const cloudBuses = snap.val() || {};
-            if (Object.keys(cloudBuses).length > 0) {
-              allBuses = { ...allBuses, ...cloudBuses };
-              updateBusMarkers();
-            }
+            hasCloudBusesSnapshot = true;
+            allBuses = cloudBuses;
+            updateBusMarkers();
           },
           (err) => console.warn("Live buses sync notice:", err.message)
         );
@@ -1021,12 +1026,11 @@ function initLiveMap(containerId, searchUiIds = {}) {
       // 3. Locations from Firebase RTDB (watchAllBuses)
       unsubLocations = getWatchAllBuses(
         (locations) => {
-          if (locations && Object.keys(locations).length > 0) {
-            allLocations = { ...allLocations, ...locations };
-            updateBusMarkers();
-            if (activeSearchFilter) {
-              handleSearch(searchUi);
-            }
+          hasCloudLocationsSnapshot = true;
+          allLocations = locations || {};
+          updateBusMarkers();
+          if (activeSearchFilter) {
+            handleSearch(searchUi);
           }
         },
         (err) => console.warn("Live locations sync notice:", err.message)
